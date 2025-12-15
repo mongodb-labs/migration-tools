@@ -2,9 +2,11 @@ package bsontools
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
 type bsonCastRecipient interface {
@@ -99,4 +101,61 @@ func RawValueTo[T bsonCastRecipient](in bson.RawValue) (T, error) {
 	}
 
 	return zero, cannotCastErr{in.Type, zero}
+}
+
+type bsonSourceTypes interface {
+	string | int | int32 | int64 | bson.ObjectID
+}
+
+// ToRawValue is a bit like bson.MarshalValue, but:
+// - It’s faster since it avoids reflection.
+// - It always succeeds since it only accepts certain known types.
+func ToRawValue[T bsonSourceTypes](in T) bson.RawValue {
+	switch typedIn := any(in).(type) {
+	case int:
+		if typedIn < math.MinInt32 || typedIn > math.MaxInt32 {
+			return i64ToRawValue(int64(typedIn))
+		}
+
+		return i32ToRawValue(typedIn)
+	case int32:
+		return i32ToRawValue(typedIn)
+	case int64:
+		return i64ToRawValue(typedIn)
+	case float64:
+		return bson.RawValue{
+			Type:  bson.TypeDouble,
+			Value: bsoncore.AppendDouble(nil, typedIn),
+		}
+	case bson.ObjectID:
+		return bson.RawValue{
+			Type:  bson.TypeObjectID,
+			Value: bsoncore.AppendObjectID(nil, typedIn),
+		}
+	case string:
+		return bson.RawValue{
+			Type:  bson.TypeString,
+			Value: bsoncore.AppendString(nil, typedIn),
+		}
+	}
+
+	panic(fmt.Sprintf("Unrecognized Go type: %T (maybe add marshal instructions?)", in))
+}
+
+type i32Ish interface {
+	int | int32
+}
+
+func i32ToRawValue[T i32Ish](in T) bson.RawValue {
+	return bson.RawValue{
+		Type:  bson.TypeInt32,
+		Value: bsoncore.AppendInt32(nil, int32(in)),
+	}
+}
+
+func i64ToRawValue(in int64) bson.RawValue {
+	return bson.RawValue{
+		Type:  bson.TypeInt64,
+		Value: bsoncore.AppendInt64(nil, in),
+	}
 }
