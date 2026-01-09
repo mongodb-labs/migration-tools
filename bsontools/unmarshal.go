@@ -8,30 +8,42 @@ import (
 
 // UnmarshalRaw mimics bson.Unmarshal to a bson.D.
 func UnmarshalRaw(raw bson.Raw) (bson.D, error) {
-	els, err := raw.Elements()
-	if err != nil {
-		return nil, fmt.Errorf("extracting elements: %w", err)
-	}
+	elsCount := 0
 
-	d := bson.D(make([]bson.E, len(els)))
-
-	for e, el := range els {
-		key, err := el.KeyErr()
+	for _, err := range RawElements(raw) {
 		if err != nil {
-			return nil, fmt.Errorf("extracting field %d’s name: %w", e, err)
+			return nil, fmt.Errorf("parsing BSON: %w", err)
 		}
 
-		d[e].Key = key
+		elsCount++
+	}
+
+	d := make(bson.D, 0, elsCount)
+
+	for el, err := range RawElements(raw) {
+		if err != nil {
+			panic("parsing BSON (no error earlier?!?): " + err.Error())
+		}
+
+		key, err := el.KeyErr()
+		if err != nil {
+			return nil, fmt.Errorf("extracting field %d’s name: %w", len(d), err)
+		}
+
+		e := bson.E{}
+		e.Key = key
 
 		val, err := el.ValueErr()
 		if err != nil {
 			return nil, fmt.Errorf("extracting %#q value: %w", key, err)
 		}
 
-		d[e].Value, err = unmarshalValue(val)
+		e.Value, err = unmarshalValue(val)
 		if err != nil {
-			return nil, fmt.Errorf("extracting %#q value: %w", key, err)
+			return nil, fmt.Errorf("unmarshaling %#q value: %w", key, err)
 		}
+
+		d = append(d, e)
 	}
 
 	return d, nil
@@ -39,18 +51,34 @@ func UnmarshalRaw(raw bson.Raw) (bson.D, error) {
 
 // UnmarshalArray is like UnmarshalRaw but for an array.
 func UnmarshalArray(raw bson.RawArray) (bson.A, error) {
-	vals, err := raw.Values()
-	if err != nil {
-		return nil, fmt.Errorf("extracting elements: %w", err)
+	elsCount := 0
+
+	for _, err := range RawElements(bson.Raw(raw)) {
+		if err != nil {
+			return nil, fmt.Errorf("parsing BSON: %w", err)
+		}
+
+		elsCount++
 	}
 
-	a := make(bson.A, len(vals))
+	a := make(bson.A, 0, elsCount)
 
-	for e, val := range vals {
-		a[e], err = unmarshalValue(val)
+	for el, err := range RawElements(bson.Raw(raw)) {
 		if err != nil {
-			return nil, fmt.Errorf("unmarshaling element %d: %w", e, err)
+			panic("parsing BSON (no error earlier?!?): " + err.Error())
 		}
+
+		val, err := el.ValueErr()
+		if err != nil {
+			return nil, fmt.Errorf("extracting element %d: %w", len(a), err)
+		}
+
+		anyVal, err := unmarshalValue(val)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshaling element %d: %w", len(a), err)
+		}
+
+		a = append(a, anyVal)
 	}
 
 	return a, nil
