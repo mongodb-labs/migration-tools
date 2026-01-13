@@ -325,7 +325,7 @@ func TestInt_UnmarshalFraction(t *testing.T) {
 	viaMarshal := mustConvertToRawValue(t, 1.25)
 
 	_, err := RawValueTo[int](viaMarshal)
-	assert.ErrorAs(t, err, &cannotCastErr{})
+	assert.ErrorAs(t, err, &cannotCastError{})
 }
 
 func TestInt(t *testing.T) {
