@@ -104,7 +104,7 @@ func RawValueTo[T bsonCastRecipient](in bson.RawValue) (T, error) {
 }
 
 type bsonSourceTypes interface {
-	string | int | int32 | int64 | bson.ObjectID
+	string | int | int32 | int64 | bson.ObjectID | bson.Raw
 }
 
 // ToRawValue is a bit like bson.MarshalValue, but:
@@ -131,6 +131,11 @@ func ToRawValue[T bsonSourceTypes](in T) bson.RawValue {
 		return bson.RawValue{
 			Type:  bson.TypeObjectID,
 			Value: bsoncore.AppendObjectID(nil, typedIn),
+		}
+	case bson.Raw:
+		return bson.RawValue{
+			Type:  bson.TypeEmbeddedDocument,
+			Value: typedIn,
 		}
 	case string:
 		return bson.RawValue{

@@ -111,8 +111,10 @@ func TestRaw(t *testing.T) {
 	}
 
 	for _, cur := range vals {
+		fromUs := ToRawValue(cur)
 		viaMarshal := mustConvertToRawValue(t, cur)
 
+		assert.Equal(t, viaMarshal, fromUs)
 		assert.Equal(t, cur, lo.Must(RawValueTo[bson.Raw](viaMarshal)))
 	}
 }
