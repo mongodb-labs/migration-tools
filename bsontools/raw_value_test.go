@@ -321,6 +321,50 @@ func TestMin(t *testing.T) {
 	assert.Equal(t, bson.MinKey{}, lo.Must(RawValueTo[bson.MinKey](viaMarshal)))
 }
 
+func TestInt_UnmarshalFraction(t *testing.T) {
+	viaMarshal := mustConvertToRawValue(t, 1.25)
+
+	_, err := RawValueTo[int](viaMarshal)
+	assert.ErrorAs(t, err, &cannotCastErr{})
+}
+
+func TestInt(t *testing.T) {
+	ints := []int{
+		0,
+		-1,
+		math.MaxInt32 - 1,
+		math.MaxInt32,
+		math.MaxInt32 + 1,
+		math.MaxInt64,
+		math.MinInt32 - 1,
+		math.MinInt32,
+		math.MinInt32 + 1,
+		math.MinInt64,
+	}
+
+	for _, cur := range ints {
+		viaMarshal := mustConvertToRawValue(t, cur)
+
+		assert.Equal(t, cur, lo.Must(RawValueTo[int](viaMarshal)), "round-trip")
+	}
+
+	coercible := []int64{
+		0,
+		-1,
+		1,
+		math.MaxInt32 - 1,
+		math.MaxInt32,
+		math.MinInt32,
+		math.MinInt32 + 1,
+	}
+
+	for _, cur := range coercible {
+		viaMarshal := mustConvertToRawValue(t, cur)
+
+		assert.Equal(t, int(cur), lo.Must(RawValueTo[int](viaMarshal)), "round-trip")
+	}
+}
+
 func mustConvertToRawValue(t *testing.T, val any) bson.RawValue {
 	bsonType, buf, err := bson.MarshalValue(val)
 	require.NoError(t, err, "must marshal Go %T to BSON", val)

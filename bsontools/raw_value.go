@@ -18,10 +18,13 @@ type alwaysMarshalableTypes interface {
 		// This type includes an `any`, which can’t always be marshaled.
 		//bson.CodeWithScope |
 
-		int32 | bson.Timestamp | int64 | bson.Decimal128 | bson.MinKey | bson.MaxKey
+		int32 | bson.Timestamp | int64 | bson.Decimal128 | bson.MinKey | bson.MaxKey |
+
+		// convenience:
+		int
 }
 
-type bsonCastRecipient interface {
+type unmarshalTargets interface {
 	alwaysMarshalableTypes |
 
 		// This works for casting/unmarshaling but not for marshaling
@@ -38,19 +41,20 @@ type cannotCastErr struct {
 }
 
 func (ce cannotCastErr) Error() string {
-	return fmt.Sprintf("cannot cast BSON %s to %T", ce.gotBSONType, ce.toGoType)
+	return fmt.Sprintf("cannot cast BSON %s to Go %T", ce.gotBSONType, ce.toGoType)
 }
 
 // RawValueTo is a bit like bson.UnmarshalValue, but it’s much faster because
 // it avoids reflection. The downside is that only certain types are supported.
 //
-// This enforces strict type equivalence. For example, it won’t coerce a float
-// to an int.
+// This usually enforces strict numeric type equivalence. For example, it won’t
+// coerce a float to an int64. If Go’s int type is the target, either int32 or
+// int64 is acceptable.
 //
 // Example usage:
 //
 //	str, err := RawValueTo[string](rv)
-func RawValueTo[T bsonCastRecipient](in bson.RawValue) (T, error) {
+func RawValueTo[T unmarshalTargets](in bson.RawValue) (T, error) {
 	var zero T
 
 	switch any(zero).(type) {
@@ -126,6 +130,11 @@ func RawValueTo[T bsonCastRecipient](in bson.RawValue) (T, error) {
 		if val, ok := in.Int64OK(); ok {
 			return any(val).(T), nil
 		}
+	case int:
+		switch in.Type {
+		case bson.TypeInt32, bson.TypeInt64:
+			return any(int(in.AsInt64())).(T), nil
+		}
 	case bson.Decimal128:
 		if dec, ok := in.Decimal128OK(); ok {
 			return any(dec).(T), nil
@@ -151,17 +160,10 @@ func RawValueTo[T bsonCastRecipient](in bson.RawValue) (T, error) {
 	return zero, cannotCastErr{in.Type, zero}
 }
 
-type bsonSourceTypes interface {
-	alwaysMarshalableTypes |
-
-		// For convenience:
-		int
-}
-
 // ToRawValue is a bit like bson.MarshalValue, but:
 // - It’s faster since it avoids reflection.
 // - It always succeeds since it only accepts certain known types.
-func ToRawValue[T bsonSourceTypes](in T) bson.RawValue {
+func ToRawValue[T alwaysMarshalableTypes](in T) bson.RawValue {
 	switch typedIn := any(in).(type) {
 	case float64:
 		return bson.RawValue{
