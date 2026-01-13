@@ -2,10 +2,12 @@
 
 A library of reusable components for MongoDB migration tooling.
 
+**IMPORTANT:** This Repository is **NOT** an officially supported MongoDB
+product. No support guarantees are made. Use at your own risk.
+
 ## Organization
 
-When augmenting this library, prioritize separation of concerns.
+When updating this library, prioritize separation of concerns.
 
 In particular:
-- Put MongoDB-specific logic under `mongo/`.
-- Avoid references to specific migration tools.
+- Avoid references to specific downstream tools except to give examples.
