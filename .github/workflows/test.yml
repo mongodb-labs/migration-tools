@@ -1,0 +1,13 @@
+on:
+  push:
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
+  pull_request:
+
+jobs:
+  unit tests:
+    steps:
+    - uses: actions/setup-go@v5
+    - run: go test -v -race ./...
