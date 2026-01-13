@@ -13,6 +13,7 @@ type bsonCastRecipient interface {
 	// BSON types:
 	bson.Raw | bson.RawArray | bson.DateTime | bson.Decimal128 |
 		bson.Timestamp | bson.ObjectID | bson.Binary | bson.Regex |
+		bson.MinKey | bson.MaxKey | bson.Null | bson.Undefined |
 
 		// Go types:
 		bool | string | int32 | int64 | float64 | time.Time
@@ -72,6 +73,22 @@ func RawValueTo[T bsonCastRecipient](in bson.RawValue) (T, error) {
 		if pattern, opts, ok := in.RegexOK(); ok {
 			return any(bson.Regex{pattern, opts}).(T), nil
 		}
+	case bson.MinKey:
+		if in.Type == bson.TypeMinKey {
+			return any(zero).(T), nil
+		}
+	case bson.MaxKey:
+		if in.Type == bson.TypeMaxKey {
+			return any(zero).(T), nil
+		}
+	case bson.Null:
+		if in.Type == bson.TypeNull {
+			return any(zero).(T), nil
+		}
+	case bson.Undefined:
+		if in.Type == bson.TypeUndefined {
+			return any(zero).(T), nil
+		}
 	case bool:
 		if val, ok := in.BooleanOK(); ok {
 			return any(val).(T), nil
@@ -104,7 +121,10 @@ func RawValueTo[T bsonCastRecipient](in bson.RawValue) (T, error) {
 }
 
 type bsonSourceTypes interface {
-	string | int | int32 | int64 | bson.ObjectID | bson.Raw
+	bson.ObjectID | bson.Raw |
+		bson.MinKey | bson.MaxKey | bson.Undefined | bson.Null |
+
+		string | int | int32 | int64
 }
 
 // ToRawValue is a bit like bson.MarshalValue, but:
@@ -136,6 +156,22 @@ func ToRawValue[T bsonSourceTypes](in T) bson.RawValue {
 		return bson.RawValue{
 			Type:  bson.TypeEmbeddedDocument,
 			Value: typedIn,
+		}
+	case bson.MinKey:
+		return bson.RawValue{
+			Type: bson.TypeMinKey,
+		}
+	case bson.MaxKey:
+		return bson.RawValue{
+			Type: bson.TypeMaxKey,
+		}
+	case bson.Undefined:
+		return bson.RawValue{
+			Type: bson.TypeUndefined,
+		}
+	case bson.Null:
+		return bson.RawValue{
+			Type: bson.TypeNull,
 		}
 	case string:
 		return bson.RawValue{

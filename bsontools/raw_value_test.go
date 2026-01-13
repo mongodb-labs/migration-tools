@@ -156,6 +156,38 @@ func TestTimestamp(t *testing.T) {
 	}
 }
 
+func TestMin(t *testing.T) {
+	fromUs := ToRawValue(bson.MinKey{})
+	viaMarshal := mustConvertToRawValue(t, bson.MinKey{})
+
+	assert.Equal(t, bson.MinKey{}, lo.Must(RawValueTo[bson.MinKey](fromUs)))
+	assert.Equal(t, bson.MinKey{}, lo.Must(RawValueTo[bson.MinKey](viaMarshal)))
+}
+
+func TestMax(t *testing.T) {
+	fromUs := ToRawValue(bson.MaxKey{})
+	viaMarshal := mustConvertToRawValue(t, bson.MaxKey{})
+
+	assert.Equal(t, bson.MaxKey{}, lo.Must(RawValueTo[bson.MaxKey](fromUs)))
+	assert.Equal(t, bson.MaxKey{}, lo.Must(RawValueTo[bson.MaxKey](viaMarshal)))
+}
+
+func TestUndefined(t *testing.T) {
+	fromUs := ToRawValue(bson.Undefined{})
+	viaMarshal := mustConvertToRawValue(t, bson.Undefined{})
+
+	assert.Equal(t, bson.Undefined{}, lo.Must(RawValueTo[bson.Undefined](fromUs)))
+	assert.Equal(t, bson.Undefined{}, lo.Must(RawValueTo[bson.Undefined](viaMarshal)))
+}
+
+func TestNull(t *testing.T) {
+	fromUs := ToRawValue(bson.Null{})
+	viaMarshal := mustConvertToRawValue(t, bson.Null{})
+
+	assert.Equal(t, bson.Null{}, lo.Must(RawValueTo[bson.Null](fromUs)))
+	assert.Equal(t, bson.Null{}, lo.Must(RawValueTo[bson.Null](viaMarshal)))
+}
+
 func TestObjectID(t *testing.T) {
 	vals := []bson.ObjectID{
 		bson.NewObjectID(),
