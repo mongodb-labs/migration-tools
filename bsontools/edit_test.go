@@ -26,7 +26,7 @@ var referenceValues = []any{
 	true,
 	bson.NewDateTimeFromTime(time.Now()),
 	nil,
-	bson.Regex{"ab?c", "o"},
+	bson.Regex{Pattern: "ab?c", Options: "o"},
 	bson.DBPointer{DB: "mydb", Pointer: bson.NewObjectID()},
 	bson.JavaScript("use strict;"),
 	bson.Symbol("nonono"),

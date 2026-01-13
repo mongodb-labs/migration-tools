@@ -40,10 +40,10 @@ func TestMarshalUnmarshal(t *testing.T) {
 			nil,
 			bson.NewDateTimeFromTime(time.Now()),
 			//time.Now(),
-			bson.Binary{12, []byte{0, 1, 2}},
+			bson.Binary{Subtype: 12, Data: []byte{0, 1, 2}},
 			bson.NewObjectID(),
 			bson.Timestamp{234234, 345345},
-			bson.Regex{"the pattern", "opts"},
+			bson.Regex{Pattern: "the pattern", Options: "opts"},
 		}}},
 		{
 			{"yeah", true},

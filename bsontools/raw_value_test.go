@@ -13,8 +13,6 @@ import (
 )
 
 func TestWrongType(t *testing.T) {
-	type myString string
-
 	rv := mustConvertToRawValue(t, "abc")
 	got, err := RawValueTo[int64](rv)
 	require.Error(t, err)
@@ -98,8 +96,8 @@ func TestRawArray(t *testing.T) {
 
 func TestBinary(t *testing.T) {
 	vals := []bson.Binary{
-		{0, []byte{}},
-		{0x4, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}},
+		{Subtype: 0, Data: []byte{}},
+		{Subtype: 0x4, Data: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}},
 	}
 
 	for _, cur := range vals {
