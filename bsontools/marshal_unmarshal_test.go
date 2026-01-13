@@ -9,6 +9,22 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+func TestIDIndexUnmarshal(t *testing.T) {
+	eJSON := `{"create": "mycapped2","capped": true,"size": {"$numberInt":"1024"},"idIndex": {"v": {"$numberInt":"2"},"key": {"_id": {"$numberInt":"1"}},"name": "_id_"}}`
+
+	var raw bson.Raw
+	err := bson.UnmarshalExtJSON([]byte(eJSON), false, &raw)
+	require.NoError(t, err, "should eJSON -> BSON")
+
+	d, err := UnmarshalRaw(raw)
+	require.NoError(t, err)
+
+	var dDriver bson.D
+	require.NoError(t, bson.Unmarshal(raw, &dDriver))
+
+	assert.Equal(t, dDriver, d)
+}
+
 func TestMarshalUnmarshal(t *testing.T) {
 	docs := []bson.D{
 		{},
