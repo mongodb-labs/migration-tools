@@ -124,7 +124,7 @@ type bsonSourceTypes interface {
 	bson.ObjectID | bson.Raw |
 		bson.MinKey | bson.MaxKey | bson.Undefined | bson.Null |
 
-		string | int | int32 | int64
+		string | int | int32 | int64 | float64
 }
 
 // ToRawValue is a bit like bson.MarshalValue, but:
