@@ -106,7 +106,11 @@ func unmarshalValue(val bson.RawValue) (any, error) {
 		return tVal, nil
 	case bson.TypeBinary:
 		subtype, bin := val.Binary()
-		return bson.Binary{subtype, bin}, nil
+
+		return bson.Binary{
+			Subtype: subtype,
+			Data:    bin,
+		}, nil
 	case bson.TypeUndefined:
 		return bson.Undefined{}, nil
 	case bson.TypeObjectID:
@@ -119,9 +123,14 @@ func unmarshalValue(val bson.RawValue) (any, error) {
 		return nil, nil
 	case bson.TypeRegex:
 		pattern, opts := val.Regex()
-		return bson.Regex{pattern, opts}, nil
+
+		return bson.Regex{
+			Pattern: pattern,
+			Options: opts,
+		}, nil
 	case bson.TypeDBPointer:
 		db, ptr := val.DBPointer()
+
 		return bson.DBPointer{DB: db, Pointer: ptr}, nil
 	case bson.TypeJavaScript:
 		return bson.JavaScript(val.JavaScript()), nil
@@ -129,6 +138,7 @@ func unmarshalValue(val bson.RawValue) (any, error) {
 		return bson.Symbol(val.Symbol()), nil
 	case bson.TypeCodeWithScope:
 		code, scope := val.CodeWithScope()
+
 		return bson.CodeWithScope{
 			Code:  bson.JavaScript(code),
 			Scope: scope,
@@ -137,7 +147,8 @@ func unmarshalValue(val bson.RawValue) (any, error) {
 		return val.Int32(), nil
 	case bson.TypeTimestamp:
 		t, i := val.Timestamp()
-		return bson.Timestamp{t, i}, nil
+
+		return bson.Timestamp{T: t, I: i}, nil
 	case bson.TypeInt64:
 		return val.Int64(), nil
 	case bson.TypeDecimal128:
