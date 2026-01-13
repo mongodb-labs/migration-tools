@@ -3,6 +3,6 @@ linters:
   exclusions:
 
     rules:
-      - text: 'composites: .+(bson\.(E|Timestamp)'
+      - text: 'composites: .+(bson\.(E|Timestamp))'
         linters:
           - govet
