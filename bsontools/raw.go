@@ -8,7 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
-// RawLookupOpt extracts & unmarshals a referent value from a BSON document.
+// RawLookup extracts & unmarshals a referent value from a BSON document.
 // It’s like bson.Raw.LookupErr combined with RawValueTo.
 func RawLookup[T unmarshalTargets](doc bson.Raw, pointer ...string) (T, error) {
 	rv, err := doc.LookupErr(pointer...)
