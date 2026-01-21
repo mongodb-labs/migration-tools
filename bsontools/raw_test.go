@@ -7,7 +7,33 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
+
+func TestRawLookupOpt(t *testing.T) {
+	doc := bson.D{
+		{"foo", "bar"},
+	}
+	raw, err := bson.Marshal(doc)
+	require.NoError(t, err)
+
+	bar, err := RawLookupOpt[string](raw, "foo")
+	require.NoError(t, err)
+	require.NotNil(t, bar)
+	assert.Equal(t, "bar", *bar)
+
+	oops, err := RawLookupOpt[string](raw, "oops")
+	require.NoError(t, err)
+	assert.Nil(t, oops)
+
+	_, err = RawLookupOpt[string](raw, "foo", "bar")
+	assert.ErrorAs(t, err, &bsoncore.InvalidDepthTraversalError{})
+
+	_, err = RawLookupOpt[int64](raw, "foo")
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "int64")
+	assert.ErrorContains(t, err, "string")
+}
 
 func TestRawElements(t *testing.T) {
 	srcD := bson.D{
