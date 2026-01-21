@@ -1,7 +1,6 @@
 package bsontools
 
 import (
-	"errors"
 	"fmt"
 	"iter"
 
@@ -11,26 +10,20 @@ import (
 
 // RawLookupOpt extracts & unmarshals a referent value from a BSON document.
 // It’s like bson.Raw.LookupErr combined with RawValueTo.
-//
-// This returns nil if the value doesn’t exist.
-func RawLookupOpt[T unmarshalTargets](doc bson.Raw, pointer ...string) (*T, error) {
+func RawLookup[T unmarshalTargets](doc bson.Raw, pointer ...string) (T, error) {
 	rv, err := doc.LookupErr(pointer...)
 
 	if err != nil {
-		if errors.Is(err, bsoncore.ErrElementNotFound) {
-			return nil, nil
-		}
-
-		return nil, fmt.Errorf("extracting %#q: %w", pointer, err)
+		return *new(T), fmt.Errorf("extracting %#q: %w", pointer, err)
 	}
 
 	val, err := RawValueTo[T](rv)
 
 	if err != nil {
-		return nil, fmt.Errorf("casting %#q: %w", pointer, err)
+		return *new(T), fmt.Errorf("casting %#q: %w", pointer, err)
 	}
 
-	return &val, err
+	return val, err
 }
 
 // RawElements returns an iterator over a Raw’s elements.
