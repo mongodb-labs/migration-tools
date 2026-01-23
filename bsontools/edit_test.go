@@ -62,6 +62,19 @@ func TestRemoveFromRaw_Missing(t *testing.T) {
 	}
 }
 
+func TestRemoveFromRaw_Oplog(t *testing.T) {
+	ejson := `{"ts": {"$timestamp":{"t":1769128758,"i":2}},"t": {"$numberLong":"1"},"v": {"$numberInt":"2"},"op": "i","ns": "txnDB.stuff","o": {"_id": "outside_txn"},"o2": {"_id": "outside_txn"},"ui": {"$binary":{"base64":"1/FBdMdnRsuVGiCsEuPHIw==","subType":"04"}},"lsid": {"id": {"$binary":{"base64":"Bhv0WYEgSyWyTHgzVLI4bg==","subType":"04"}},"uid": {"$binary":{"base64":"47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=","subType":"00"}}},"txnNumber": {"$numberLong":"1"},"prevOpTime": {"ts": {"$timestamp":{"t":0,"i":0}},"t": {"$numberLong":"-1"}}}`
+
+	var raw bson.Raw
+	require.NoError(t, bson.UnmarshalExtJSON([]byte(ejson), false, &raw))
+
+	found, err := RemoveFromRaw(&raw, "ui")
+	require.NoError(t, err)
+	assert.True(t, found)
+
+	assert.Zero(t, raw.Lookup("ui"))
+}
+
 func TestReplaceInRaw_Missing(t *testing.T) {
 	for _, val := range referenceValues {
 		inDoc := bson.D{
