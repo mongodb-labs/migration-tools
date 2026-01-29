@@ -54,7 +54,7 @@ func TestRemoveFromRaw_Missing(t *testing.T) {
 
 		inRawCopy := slices.Clone(inRaw)
 
-		found, err := RemoveFromRaw(&inRaw, "foo")
+		inRaw, found, err := RemoveFromRaw(inRaw, "foo")
 		require.NoError(t, err)
 		assert.False(t, found, "should not find element")
 
@@ -68,7 +68,7 @@ func TestRemoveFromRaw_Oplog(t *testing.T) {
 	var raw bson.Raw
 	require.NoError(t, bson.UnmarshalExtJSON([]byte(ejson), false, &raw))
 
-	found, err := RemoveFromRaw(&raw, "ui")
+	raw, found, err := RemoveFromRaw(raw, "ui")
 	require.NoError(t, err)
 	assert.True(t, found)
 
@@ -86,8 +86,8 @@ func TestReplaceInRaw_Missing(t *testing.T) {
 
 		inRawCopy := slices.Clone(inRaw)
 
-		found, err := ReplaceInRaw(
-			&inRaw,
+		inRaw, found, err := ReplaceInRaw(
+			inRaw,
 			bson.RawValue{Type: bson.TypeNull},
 			"foo",
 		)
@@ -109,7 +109,7 @@ func TestRemoveFromRaw_Shallow_RemoveFromStart(t *testing.T) {
 
 		bsonType := inRaw.Lookup("bar").Type
 
-		found, err := RemoveFromRaw(&inRaw, "bar")
+		inRaw, found, err := RemoveFromRaw(inRaw, "bar")
 		require.NoError(t, err)
 		assert.True(t, found, "should remove")
 
@@ -140,7 +140,7 @@ func TestRemoveFromRaw_Shallow_RemoveFromMiddle(t *testing.T) {
 
 		bsonType := inRaw.Lookup("bar").Type
 
-		found, err := RemoveFromRaw(&inRaw, "bar")
+		inRaw, found, err := RemoveFromRaw(inRaw, "bar")
 		require.NoError(t, err)
 		assert.True(t, found, "should remove")
 
@@ -161,10 +161,10 @@ func TestRemoveFromRaw_Shallow_RemoveFromMiddle(t *testing.T) {
 }
 
 func TestRemoveFromRaw_Deep_PointerTooDeep(t *testing.T) {
-	_, err := RemoveFromRaw(
-		lo.ToPtr(bson.Raw(lo.Must(bson.Marshal(bson.D{
+	_, _, err := RemoveFromRaw(
+		lo.Must(bson.Marshal(bson.D{
 			{"foo", bson.D{{"bar", 234.345}}},
-		})))),
+		})),
 		"foo",
 		"bar",
 		"baz",
@@ -213,8 +213,8 @@ func TestReplaceInRaw_Deep(t *testing.T) {
 				replacement.Type, replacement.Value = lo.Must2(bson.MarshalValue(replacementVal))
 			}
 
-			found, err := ReplaceInRaw(
-				&inRaw,
+			inRaw, found, err := ReplaceInRaw(
+				inRaw,
 				replacement,
 				"bar", "bbb", "1",
 			)
@@ -260,7 +260,7 @@ func TestRemoveFromRaw_Deep(t *testing.T) {
 
 		bsonType := inRaw.Lookup("bar", "bbb").Type
 
-		found, err := RemoveFromRaw(&inRaw, "bar", "bbb", "1")
+		inRaw, found, err := RemoveFromRaw(inRaw, "bar", "bbb", "1")
 		require.NoError(t, err)
 		assert.True(t, found, "should remove")
 
@@ -296,7 +296,7 @@ func TestRemoveFromRaw_Shallow_RemoveFromEnd(t *testing.T) {
 
 		bsonType := inRaw.Lookup("bar").Type
 
-		found, err := RemoveFromRaw(&inRaw, "bar")
+		inRaw, found, err := RemoveFromRaw(inRaw, "bar")
 		require.NoError(t, err)
 		assert.True(t, found, "should remove")
 
