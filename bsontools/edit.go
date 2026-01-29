@@ -37,16 +37,16 @@ func (pe PointerTooDeepError) Error() string {
 // Example usage (replaces /role/title):
 //
 //	ReplaceInRaw(&rawDoc, newRoleTitle, "role", "title")
-func ReplaceInRaw(rawRef *bson.Raw, newValue bson.RawValue, pointer ...string) (bool, error) {
+func ReplaceInRaw[T ~[]byte](rawRef *T, newValue bson.RawValue, pointer ...string) (bool, error) {
 	return replaceOrRemoveInRaw(rawRef, &newValue, pointer)
 }
 
 // RemoveFromRaw is like ReplaceInRaw, but it removes the element.
-func RemoveFromRaw(rawRef *bson.Raw, pointer ...string) (bool, error) {
+func RemoveFromRaw[T ~[]byte](rawRef *T, pointer ...string) (bool, error) {
 	return replaceOrRemoveInRaw(rawRef, nil, pointer)
 }
 
-func replaceOrRemoveInRaw(rawRef *bson.Raw, replacement *bson.RawValue, pointer []string) (bool, error) {
+func replaceOrRemoveInRaw[T ~[]byte](rawRef *T, replacement *bson.RawValue, pointer []string) (bool, error) {
 	sizeFromHeader := int(binary.LittleEndian.Uint32(*rawRef))
 
 	pos := 4
