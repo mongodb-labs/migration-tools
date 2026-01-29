@@ -10,7 +10,9 @@ import (
 
 // RawLookup extracts & unmarshals a referent value from a BSON document.
 // It’s like bson.Raw.LookupErr combined with RawValueTo.
-func RawLookup[T unmarshalTargets](doc bson.Raw, pointer ...string) (T, error) {
+func RawLookup[T unmarshalTargets, D ~[]byte](in D, pointer ...string) (T, error) {
+	doc := bson.Raw(in)
+
 	rv, err := doc.LookupErr(pointer...)
 
 	if err != nil {
@@ -30,7 +32,7 @@ func RawLookup[T unmarshalTargets](doc bson.Raw, pointer ...string) (T, error) {
 //
 // If the iterator returns an error but the caller continues iterating,
 // a panic will ensue.
-func RawElements(doc bson.Raw) iter.Seq2[bson.RawElement, error] {
+func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
 	remaining := doc[4:]
 
 	return func(yield func(bson.RawElement, error) bool) {
