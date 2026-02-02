@@ -52,7 +52,7 @@ func (o *Option[T]) UnmarshalBSONValue(bType byte, raw []byte) error {
 	return nil
 }
 
-// IsZero implements bsoncodec.Zeroer.
+// IsZero implements bson.Zeroer.
 func (o Option[T]) IsZero() bool {
 	return o.IsNone()
 }
