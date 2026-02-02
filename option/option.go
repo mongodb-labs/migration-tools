@@ -2,11 +2,16 @@
 // It takes inspiration from [samber/mo] but also works with BSON and exposes
 // a (hopefully) more refined interface.
 //
-// Option types facilitate avoidance of nil-dereference bugs, at the cost of a
-// bit more overhead.
+// Typical Go code uses pointers to represent such values. That’s problematic
+// for 2 reasons:
+// - If you accidentally dereference a nil pointer, your program panics.
+// - The pointer increases GC pressure.
+//
+// This type solves both of those.
 //
 // A couple special notes:
 //   - nil values inside the Option, like `Some([]int(nil))`, are forbidden.
+//     (A runtime panic will happen if you try.)
 //   - Option’s BSON marshaling/unmarshaling interoperates with the [bson]
 //     package’s handling of nilable pointers. So any code that uses nilable
 //     pointers to represent optional values can switch to Option and
@@ -93,6 +98,16 @@ func (o Option[T]) MustGet() T {
 	val, exists := o.Get()
 	if !exists {
 		panic(fmt.Sprintf("MustGet() called on empty %T", o))
+	}
+
+	return val
+}
+
+// MustGetf is like MustGet, but this lets you customize the panic.
+func (o Option[T]) MustGetf(pattern string, args ...any) T {
+	val, exists := o.Get()
+	if !exists {
+		panic(fmt.Sprintf(pattern, args...))
 	}
 
 	return val
