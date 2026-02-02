@@ -6,9 +6,9 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-var _ bson.ValueMarshaler = &Option[int]{}
+var _ bson.ValueMarshaler = Option[int]{}
 var _ bson.ValueUnmarshaler = &Option[int]{}
-var _ bson.Zeroer = &Option[int]{}
+var _ bson.Zeroer = Option[int]{}
 
 // MarshalBSONValue implements bson.ValueMarshaler.
 func (o Option[T]) MarshalBSONValue() (byte, []byte, error) {

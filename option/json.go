@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 )
 
-var _ json.Marshaler = &Option[int]{}
+var _ json.Marshaler = Option[int]{}
 var _ json.Unmarshaler = &Option[int]{}
 
 // MarshalJSON encodes Option into json.
