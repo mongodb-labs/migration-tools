@@ -6,6 +6,7 @@ require (
 	github.com/samber/lo v1.52.0
 	github.com/stretchr/testify v1.11.1
 	go.mongodb.org/mongo-driver/v2 v2.5.0
+	golang.org/x/sync v0.11.0
 )
 
 require (
