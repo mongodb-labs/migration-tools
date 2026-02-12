@@ -1,10 +1,10 @@
-// contextplus provides wrappers around the standard library’s context
+// Package contextplus provides wrappers around the standard library’s context
 // cancellation & expiry functions. These wrappers do some nice things:
 //
-// - They mandate cancellation/expiry causes.
-// - Expiry causes contain the timeout/deadline.
-// - The returned Context’s Err() will include both Canceled/DeadlineExceeded
-//   AND the Cause.
+//   - They mandate cancellation/expiry causes.
+//   - Expiry causes contain the timeout/deadline.
+//   - The returned Context’s Err() will include both Canceled/DeadlineExceeded
+//     AND the Cause.
 //
 // The standard library would ideally do all of the above for us, but that
 // would break Go’s backward compatibility with code that (alas) checks strict
@@ -14,18 +14,15 @@
 //
 // Go’s style guide, as of this writing, categorically forbids custom
 // context.Context implementations like this one. The rationale given, though,
-// concerns interoperabililty between code bases: avoiding a state where calls
+// concerns interoperability between code bases: avoiding a state where calls
 // to library A *must* use that library’s context implementation, while calls
-// to library B need to use B’s context.
+// to library B require B’s context.
 //
 // contextplus doesn’t create that problem, though, because its changes to
 // the standard library’s Context are purely informational. It goes without
 // saying, of course, that publicly-accessible functions *SHOULD NOT*
 // require a *contextplus.C, but should instead accept a context.Context.
 // Internal functions *MAY* require a *contextplus.C for consistency.
-//
-// See mongo-go/ctxutil for additional related functionality.
-
 package contextplus
 
 import (
