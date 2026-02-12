@@ -26,7 +26,6 @@
 package option
 
 import (
-	"fmt"
 	"reflect"
 
 	"github.com/samber/lo"
@@ -64,9 +63,11 @@ func FromPointer[T any](valPtr *T) Option[T] {
 		return None[T]()
 	}
 
-	if isNil(*valPtr) {
-		panic(fmt.Sprintf("Given pointer (%T) refers to nil, which is forbidden.", valPtr))
-	}
+	lo.Assertf(
+		!isNil(*valPtr),
+		"Given %T refers to nil, which is forbidden.",
+		valPtr,
+	)
 
 	return Option[T]{true, *valPtr}
 }
@@ -99,20 +100,13 @@ func (o Option[T]) Get() (T, bool) {
 
 // MustGet is like Get but panics if the Option is empty.
 func (o Option[T]) MustGet() T {
-	val, exists := o.Get()
-	if !exists {
-		panic(fmt.Sprintf("MustGet() called on empty %T", o))
-	}
-
-	return val
+	return o.MustGetf("%T must be nonempty!", o)
 }
 
 // MustGetf is like MustGet, but this lets you customize the panic.
 func (o Option[T]) MustGetf(pattern string, args ...any) T {
 	val, exists := o.Get()
-	if !exists {
-		panic(fmt.Sprintf(pattern, args...))
-	}
+	lo.Assertf(exists, pattern, args...)
 
 	return val
 }

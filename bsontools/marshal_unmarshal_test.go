@@ -16,7 +16,7 @@ func TestIDIndexUnmarshal(t *testing.T) {
 	err := bson.UnmarshalExtJSON([]byte(eJSON), false, &raw)
 	require.NoError(t, err, "should eJSON -> BSON")
 
-	d, err := UnmarshalRaw(raw)
+	d, err := UnmarshalToD(raw)
 	require.NoError(t, err)
 
 	var dDriver bson.D
@@ -68,7 +68,7 @@ func TestMarshalUnmarshal(t *testing.T) {
 
 		assert.Equal(t, bson.Raw(fromLib), raw, "output should be same")
 
-		rt, err := UnmarshalRaw(fromLib)
+		rt, err := UnmarshalToD(fromLib)
 		require.NoError(t, err)
 
 		var rtFromLib bson.D
