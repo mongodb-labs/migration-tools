@@ -1,6 +1,6 @@
 module github.com/mongodb-labs/migration-tools
 
-go 1.25.0
+go 1.24.0
 
 require (
 	github.com/samber/lo v1.52.0
