@@ -5,7 +5,7 @@
 // Typical Go code uses pointers to represent such values. That’s problematic
 // for 2 reasons:
 // - If you accidentally dereference a nil pointer, your program panics.
-// - The pointer increases GC pressure.
+// - The pointer can increase GC pressure.
 //
 // This type solves both of those.
 //
@@ -28,6 +28,8 @@ package option
 import (
 	"fmt"
 	"reflect"
+
+	"github.com/samber/lo"
 )
 
 // Option represents a possibly-empty value.
@@ -39,9 +41,11 @@ type Option[T any] struct {
 
 // Some creates an Option with a value.
 func Some[T any](value T) Option[T] {
-	if isNil(value) {
-		panic(fmt.Sprintf("Option forbids nil value (%T).", value))
-	}
+	lo.Assertf(
+		!isNil(value),
+		"Option[%T] forbids nil value",
+		value,
+	)
 
 	return Option[T]{true, value}
 }
