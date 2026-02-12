@@ -1,12 +1,13 @@
 module github.com/mongodb-labs/migration-tools
 
-go 1.24
+go 1.25.0
 
 require (
 	github.com/samber/lo v1.52.0
 	github.com/stretchr/testify v1.11.1
 	go.mongodb.org/mongo-driver/v2 v2.5.0
-	golang.org/x/sync v0.11.0
+	golang.org/x/exp v0.0.0-20260211191109-2735e65f0518
+	golang.org/x/sync v0.19.0
 )
 
 require (
