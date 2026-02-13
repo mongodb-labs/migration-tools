@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	github.com/ccoveille/go-safecast/v2 v2.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/text v0.22.0 // indirect

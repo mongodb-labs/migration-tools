@@ -43,6 +43,8 @@ func TestFloat64(t *testing.T) {
 func TestString(t *testing.T) {
 	vals := []string{
 		"",
+		"\x00",
+		"\x00a\x00",
 		"0",
 		"abc",
 		"ábç",
@@ -52,6 +54,7 @@ func TestString(t *testing.T) {
 		viaMarshal := mustConvertToRawValue(t, cur)
 
 		assert.Equal(t, cur, lo.Must(RawValueTo[string](viaMarshal)))
+		assert.Equal(t, cur, lo.Must(RawValueToString(viaMarshal)))
 	}
 }
 
@@ -265,6 +268,7 @@ func TestTimestamp(t *testing.T) {
 		viaMarshal := mustConvertToRawValue(t, cur)
 
 		assert.Equal(t, cur, lo.Must(RawValueTo[bson.Timestamp](viaMarshal)))
+		assert.Equal(t, cur, lo.Must(RawValueToTimestamp(viaMarshal)))
 	}
 }
 
@@ -286,6 +290,7 @@ func TestInt64(t *testing.T) {
 		viaMarshal := mustConvertToRawValue(t, cur)
 
 		assert.Equal(t, cur, lo.Must(RawValueTo[int64](viaMarshal)), "round-trip")
+		assert.Equal(t, cur, lo.Must(RawValueToInt64(viaMarshal)), "round-trip")
 	}
 }
 
@@ -323,7 +328,10 @@ func TestInt_UnmarshalFraction(t *testing.T) {
 	viaMarshal := mustConvertToRawValue(t, 1.25)
 
 	_, err := RawValueTo[int](viaMarshal)
-	assert.ErrorAs(t, err, &cannotCastError{})
+	assert.ErrorAs(t, err, &cannotCastError[int]{})
+
+	_, err = RawValueToInt(viaMarshal)
+	assert.ErrorAs(t, err, &cannotCastError[int]{})
 }
 
 func TestInt(t *testing.T) {
@@ -344,6 +352,7 @@ func TestInt(t *testing.T) {
 		viaMarshal := mustConvertToRawValue(t, cur)
 
 		assert.Equal(t, cur, lo.Must(RawValueTo[int](viaMarshal)), "round-trip")
+		assert.Equal(t, cur, lo.Must(RawValueToInt(viaMarshal)), "round-trip")
 	}
 
 	coercible := []int64{
@@ -360,6 +369,7 @@ func TestInt(t *testing.T) {
 		viaMarshal := mustConvertToRawValue(t, cur)
 
 		assert.Equal(t, int(cur), lo.Must(RawValueTo[int](viaMarshal)), "round-trip")
+		assert.Equal(t, int(cur), lo.Must(RawValueToInt(viaMarshal)), "round-trip")
 	}
 }
 

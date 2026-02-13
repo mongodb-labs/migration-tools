@@ -1,3 +1,6 @@
+# github.com/ccoveille/go-safecast/v2 v2.0.0
+## explicit; go 1.21
+github.com/ccoveille/go-safecast/v2
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
