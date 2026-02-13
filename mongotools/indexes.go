@@ -1,3 +1,6 @@
+// Package mongotools contains tools for use with MongoDB servers.
+//
+// See the `bsontools` package for BSON-related tools.
 package mongotools
 
 import mapset "github.com/deckarep/golang-set/v2"
