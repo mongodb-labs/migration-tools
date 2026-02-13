@@ -5,6 +5,8 @@ package mongotools
 
 import mapset "github.com/deckarep/golang-set/v2"
 
+// Taken from:
+// https://github.com/mongodb/mongo/blob/master/src/mongo/db/index/index_descriptor.h
 var validIndexOptions = mapset.NewSet(
 	"2dsphereIndexVersion",
 	"background",
