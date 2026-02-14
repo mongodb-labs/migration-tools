@@ -83,6 +83,18 @@ func RawValueToTimestamp(in bson.RawValue) (bson.Timestamp, error) {
 	return bson.Timestamp{}, cannotCastError[bson.Timestamp]{in.Type}
 }
 
+// RawValueToBinary is a more efficient RawValueTo[bson.Binary].
+func RawValueToBinary(in bson.RawValue) (bson.Binary, error) {
+	if subtype, buf, ok := in.BinaryOK(); ok {
+		return bson.Binary{
+			Subtype: subtype,
+			Data:    buf,
+		}, nil
+	}
+
+	return bson.Binary{}, cannotCastError[bson.Binary]{in.Type}
+}
+
 // RawValueToStringBytes is like RawValueToString but returns the raw buffer
 // rather than allocating a new string.
 func RawValueToStringBytes(in bson.RawValue) ([]byte, error) {
@@ -95,7 +107,7 @@ func RawValueToStringBytes(in bson.RawValue) ([]byte, error) {
 
 		strlen := binary.LittleEndian.Uint32(in.Value)
 
-		if len(in.Value) != int(strlen) {
+		if len(in.Value)-4 != int(strlen) {
 			return nil, fmt.Errorf("BSON string header says %d bytes but found %d", strlen, len(in.Value))
 		}
 
