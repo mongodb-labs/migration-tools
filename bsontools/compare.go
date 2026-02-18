@@ -65,15 +65,13 @@ func CompareBinaries(a, b bson.RawValue) (int, error) {
 		return 0, err
 	}
 
-	ret := cmp.Compare(len(aGo.Data), len(bGo.Data))
-
-	if ret == 0 {
-		ret = cmp.Compare(aGo.Subtype, bGo.Subtype)
+	if ret := cmp.Compare(len(aGo.Data), len(bGo.Data)); ret != 0 {
+		return ret, nil
 	}
 
-	if ret == 0 {
-		ret = bytes.Compare(aGo.Data, bGo.Data)
+	if ret := cmp.Compare(aGo.Subtype, bGo.Subtype); ret != 0 {
+		return ret, nil
 	}
 
-	return ret, nil
+	return bytes.Compare(aGo.Data, bGo.Data), nil
 }
