@@ -25,11 +25,6 @@ func TestCompareRecordIDs(t *testing.T) {
 			bsontools.ToRawValue(bson.Binary{Data: []byte("zz")}),
 		},
 		{
-			// Strings always sort before binary.
-			bsontools.ToRawValue("zz"),
-			bsontools.ToRawValue(bson.Binary{Data: []byte("foo")}),
-		},
-		{
 			bsontools.ToRawValue(int64(999)),
 			bsontools.ToRawValue(int64(1000)),
 		},

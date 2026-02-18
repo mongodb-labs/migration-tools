@@ -11,7 +11,7 @@ import (
 
 var typeComparator = map[bson.Type]func(a, b bson.RawValue) (int, error){
 	bson.TypeInt64:  bsontools.CompareInt64s,
-	bson.TypeString: compareStringRecordID,
+	bson.TypeString: bsontools.CompareStrings,
 	bson.TypeBinary: compareBinaryRecordID,
 }
 
@@ -22,12 +22,22 @@ func GetKnownRecordIDTypes() mapset.Set[bson.Type] {
 
 // CompareRecordIDs compares two BSON record IDs.
 //
-// For the most part these obey the same rules as normal
-// [BSON sorting]. The one exception is binary strings: here, instead of
-// sorting length-first, we sort the buffers in standard binary order.
+// For the most part this is just normal [BSON sorting]. The one exception
+// is binary strings: here, instead of sorting length-first, we sort the
+// buffers byte-by-byte.
+//
+// The comparands must have the same BSON type.
 //
 // [BSON sorting]: https://www.mongodb.com/docs/manual/reference/bson-type-comparison-order/
 func CompareRecordIDs(a, b bson.RawValue) (int, error) {
+	// NB: The “BSON binary” representation of a record ID is a view merely.
+	// While v5 shows time-series buckets’ record IDs as strings, v6+ shows
+	// the same buckets’ record IDs as BSON binary. Thus, we should never
+	// need to compare mismatched BSON types.
+	if a.Type != b.Type {
+		return 0, fmt.Errorf("cannot compare mismatched BSON types (%s & %s)", a.Type, b.Type)
+	}
+
 	comparator, ok := typeComparator[a.Type]
 	if !ok {
 		return 0, createCannotCompareTypesErr(a, b)
@@ -36,29 +46,7 @@ func CompareRecordIDs(a, b bson.RawValue) (int, error) {
 	return comparator(a, b)
 }
 
-func compareStringRecordID(a, b bson.RawValue) (int, error) {
-	// A v5 time-series collection might be upgraded in-place. In this case
-	// the v5-era string record IDs would coexist with newer, binary ones.
-	switch b.Type {
-	case bson.TypeString:
-		return bsontools.CompareStrings(a, b)
-	case bson.TypeBinary:
-		return -1, nil
-	default:
-		return 0, createCannotCompareTypesErr(a, b)
-	}
-}
-
 func compareBinaryRecordID(a, b bson.RawValue) (int, error) {
-	switch b.Type {
-	case bson.TypeString:
-		return 1, nil
-	case bson.TypeBinary:
-		// See below.
-	default:
-		return 0, createCannotCompareTypesErr(a, b)
-	}
-
 	aBin, err := bsontools.RawValueToBinary(a)
 	if err != nil {
 		return 0, err
@@ -69,7 +57,7 @@ func compareBinaryRecordID(a, b bson.RawValue) (int, error) {
 		return 0, err
 	}
 
-	if aBin.Subtype != bBin.Subtype {
+	if aBin.Subtype != 0 || bBin.Subtype != 0 {
 		return 0, fmt.Errorf("cannot compare BSON binary subtypes %d and %d", aBin.Subtype, bBin.Subtype)
 	}
 
