@@ -11,7 +11,8 @@
 //
 // A couple special notes:
 //   - nil values inside the Option, like `Some([]int(nil))`, are forbidden.
-//     (A runtime panic will happen if you try.)
+//     (A runtime panic will happen if you try.) See functions like
+//     FromPointer and IfNotZero instead.
 //   - Option’s BSON marshaling/unmarshaling interoperates with the [bson]
 //     package’s handling of nilable pointers. So any code that uses nilable
 //     pointers to represent optional values can switch to Option and
