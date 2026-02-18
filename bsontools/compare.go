@@ -52,8 +52,9 @@ func CompareStrings(a, b bson.RawValue) (int, error) {
 	return bytes.Compare(aGo, bGo), nil
 }
 
-// CompareBinaries compares two BSON binary strings.
-// Their subtypes MUST match.
+// CompareBinaries compares two BSON binary strings per [BSON sort order].
+//
+// [BSON sort order]: https://www.mongodb.com/docs/manual/reference/bson-type-comparison-order/
 func CompareBinaries(a, b bson.RawValue) (int, error) {
 	aGo, err := RawValueToBinary(a)
 	if err != nil {
@@ -65,11 +66,21 @@ func CompareBinaries(a, b bson.RawValue) (int, error) {
 		return 0, err
 	}
 
-	return bytes.Compare(aGo.Data, bGo.Data), nil
+	ret := cmp.Compare(len(aGo.Data), len(bGo.Data))
+
+	if ret == 0 {
+		ret = cmp.Compare(aGo.Subtype, bGo.Subtype)
+	}
+
+	if ret == 0 {
+		ret = bytes.Compare(aGo.Data, bGo.Data)
+	}
+
+	return ret, nil
 }
 
 // CompareRawValues is a convenience around this package’s per-type comparison
-// functions.
+// functions. The two values must be of the same BSON type.
 func CompareRawValues(a, b bson.RawValue) (int, error) {
 	if a.Type != b.Type {
 		return 0, fmt.Errorf("can’t compare BSON %s against %s", a.Type, b.Type)
