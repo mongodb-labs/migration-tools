@@ -3,7 +3,6 @@ package bsontools
 import (
 	"bytes"
 	"cmp"
-	"fmt"
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -77,19 +76,4 @@ func CompareBinaries(a, b bson.RawValue) (int, error) {
 	}
 
 	return ret, nil
-}
-
-// CompareRawValues is a convenience around this package’s per-type comparison
-// functions. The two values must be of the same BSON type.
-func CompareRawValues(a, b bson.RawValue) (int, error) {
-	if a.Type != b.Type {
-		return 0, fmt.Errorf("can’t compare BSON %s against %s", a.Type, b.Type)
-	}
-
-	comparator, ok := comparatorByType[a.Type]
-	if !ok {
-		return 0, fmt.Errorf("can’t compare BSON %s", a.Type)
-	}
-
-	return comparator(a, b)
 }
