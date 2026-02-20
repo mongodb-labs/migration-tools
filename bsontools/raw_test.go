@@ -42,6 +42,11 @@ func TestRawElements(t *testing.T) {
 	mydoc, err := bson.Marshal(srcD)
 	require.NoError(t, err)
 
+	count, err := CountRawElements(mydoc)
+	require.NoError(t, err)
+
+	assert.Equal(t, len(srcD), count)
+
 	received := bson.D{}
 
 	for el, err := range RawElements(mydoc) {
