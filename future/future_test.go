@@ -8,15 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEventual(t *testing.T) {
-	eventual, setter := New[int]()
+func TestFuture(t *testing.T) {
+	future, setter := New[int]()
 
-	assert.Panics(t, func() { eventual.Get() },
+	assert.Panics(t, func() { future.Get() },
 		"Get() should panic before the value is set",
 	)
 
 	select {
-	case <-eventual.Ready():
+	case <-future.Ready():
 		require.Fail(t, "should not be ready")
 	case <-time.NewTimer(time.Millisecond).C:
 	}
@@ -24,7 +24,7 @@ func TestEventual(t *testing.T) {
 	setter(123)
 
 	select {
-	case <-eventual.Ready():
+	case <-future.Ready():
 	case <-time.NewTimer(time.Millisecond).C:
 		require.Fail(t, "should be ready")
 	}
@@ -32,23 +32,23 @@ func TestEventual(t *testing.T) {
 	assert.Equal(
 		t,
 		123,
-		eventual.Get(),
+		future.Get(),
 		"Get() should return the value",
 	)
 
 	assert.Equal(
 		t,
 		123,
-		eventual.Get(),
+		future.Get(),
 		"Get() should return the value a 2nd time",
 	)
 }
 
-func TestEventualNil(t *testing.T) {
-	eventual, setter := New[error]()
+func TestFutureNil(t *testing.T) {
+	future, setter := New[error]()
 
 	select {
-	case <-eventual.Ready():
+	case <-future.Ready():
 		require.Fail(t, "should not be ready")
 	case <-time.NewTimer(time.Millisecond).C:
 	}
@@ -56,10 +56,10 @@ func TestEventualNil(t *testing.T) {
 	setter(nil)
 
 	select {
-	case <-eventual.Ready():
+	case <-future.Ready():
 	case <-time.NewTimer(time.Millisecond).C:
 		require.Fail(t, "should be ready")
 	}
 
-	assert.Nil(t, eventual.Get())
+	assert.Nil(t, future.Get())
 }
