@@ -19,12 +19,12 @@ type Future[T any] struct {
 	mux   sync.RWMutex
 }
 
-// FutureSetter is the type for functions that set a Future’s value.
-type FutureSetter[T any] func(T)
+// Setter is the type for functions that set a Future’s value.
+type Setter[T any] func(T)
 
 // New creates a Future and returns a pointer to it as well as the Future’s
 // setter function.
-func New[T any]() (*Future[T], FutureSetter[T]) {
+func New[T any]() (*Future[T], Setter[T]) {
 	f := &Future[T]{ready: make(chan struct{})}
 
 	return f, func(val T) {
