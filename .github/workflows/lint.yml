@@ -1,3 +1,5 @@
+name: Lint
+
 on:
   push:
     branches:
@@ -12,13 +14,15 @@ permissions:
   # pull-requests: read
 
 jobs:
-  golangci:
-    name: lint
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: jdx/mise-action@v3
         with:
-          go-version: stable
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7.0.0
+          # This matches what we use in the mongosync and mongo-tools repos.
+          version: 2026.2.19
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          # mise has already installed the version we want.
+          install-mode: "none"
