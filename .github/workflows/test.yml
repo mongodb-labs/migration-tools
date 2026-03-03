@@ -3,18 +3,19 @@ name: Test
 on:
   push:
     branches:
-      - '*'
-    tags-ignore:
-      - '*'
+      - main
   pull_request:
 
 jobs:
   unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v3
+      - name: Check out repo
+        uses: actions/checkout@v4
+      - name: Install tools with `mise`
+        uses: jdx/mise-action@v3
         with:
           # This matches what we use in the mongosync and mongo-tools repos.
           version: 2026.2.19
-      - run: go test -v -race ./...
+      - name: Run `go test`
+        run: go test -v -race ./...

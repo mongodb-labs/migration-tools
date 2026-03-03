@@ -72,7 +72,15 @@ func TestCompareInt64s(t *testing.T) {
 			bson.RawValue{Type: aType, Value: aBuf},
 			bson.RawValue{Type: bType, Value: bBuf},
 		)
-		require.NoError(t, err, "must compare %v (BSON %s) & %v (BSON %s)", cur.a, aType, cur.b, bType)
+		require.NoError(
+			t,
+			err,
+			"must compare %v (BSON %s) & %v (BSON %s)",
+			cur.a,
+			aType,
+			cur.b,
+			bType,
+		)
 
 		assert.Equal(t, cur.expect, got, "%v cmp %v", cur.a, cur.b)
 	}
@@ -97,7 +105,15 @@ func TestCompareStrings(t *testing.T) {
 			bson.RawValue{Type: aType, Value: aBuf},
 			bson.RawValue{Type: bType, Value: bBuf},
 		)
-		require.NoError(t, err, "must compare %v (BSON %s) & %v (BSON %s)", cur.a, aType, cur.b, bType)
+		require.NoError(
+			t,
+			err,
+			"must compare %v (BSON %s) & %v (BSON %s)",
+			cur.a,
+			aType,
+			cur.b,
+			bType,
+		)
 
 		assert.Equal(t, cur.expect, got, "%v cmp %v", cur.a, cur.b)
 	}

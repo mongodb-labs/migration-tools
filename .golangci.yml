@@ -1,7 +1,6 @@
 version: "2"
 linters:
   exclusions:
-
     rules:
       - text: 'composites: .+(bson\.(E|Timestamp))'
         linters:

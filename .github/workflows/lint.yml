@@ -3,9 +3,7 @@ name: Lint
 on:
   push:
     branches:
-      - '*'
-    tags-ignore:
-      - '*'
+      - main
   pull_request:
 
 permissions:
@@ -17,12 +15,26 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v3
+      - name: Check out repo
+        uses: actions/checkout@v4
+      - name: Install tools with `mise`
+        uses: jdx/mise-action@v3
         with:
           # This matches what we use in the mongosync and mongo-tools repos.
           version: 2026.2.19
-      - uses: golangci/golangci-lint-action@v9
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: npm-cache
         with:
-          # mise has already installed the version we want.
-          install-mode: "none"
+          path: node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+      # This installs the NPM tools we use for linting.
+      - name: Run `npm ci` to install node tools
+        run: npm ci
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+      - name: Run `precious lint -a`
+        run: precious lint -a
+      - name: Ensure `THIRD-PARTY-NOTICES` is up to date
+        run: |
+          go run ./cmd/third-party-notices/
+          git diff --exit-code

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/ccoveille/go-safecast/v2"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
@@ -50,7 +51,11 @@ func RemoveFromRaw[T ~[]byte](raw T, pointer ...string) (T, bool, error) {
 	return replaceOrRemoveInRaw(raw, nil, pointer)
 }
 
-func replaceOrRemoveInRaw[T ~[]byte](raw T, replacement *bson.RawValue, pointer []string) (T, bool, error) {
+func replaceOrRemoveInRaw[T ~[]byte](
+	raw T,
+	replacement *bson.RawValue,
+	pointer []string,
+) (T, bool, error) {
 	sizeFromHeader, _, ok := bsoncore.ReadLength(raw)
 	if !ok {
 		return nil, false, fmt.Errorf("too few bytes to read BSON length")
@@ -83,11 +88,19 @@ func replaceOrRemoveInRaw[T ~[]byte](raw T, replacement *bson.RawValue, pointer 
 		if len(pointer) == 1 {
 			if replacement == nil {
 				raw = slices.Delete(raw, pos, valueAt+valueSize)
-				bytesAdded = int32(-valueSize - len(keyBytes) - 2)
+				var err error
+				bytesAdded, err = safecast.Convert[int32, int](-valueSize - len(keyBytes) - 2)
+				if err != nil {
+					return raw, false, err
+				}
 			} else {
 				raw[pos] = byte(replacement.Type)
 
-				bytesAdded = int32(len(replacement.Value) - valueSize)
+				var err error
+				bytesAdded, err = safecast.Convert[int32, int](len(replacement.Value) - valueSize)
+				if err != nil {
+					return raw, false, err
+				}
 
 				raw = slices.Replace(
 					raw,
@@ -147,7 +160,12 @@ func replaceOrRemoveInRaw[T ~[]byte](raw T, replacement *bson.RawValue, pointer 
 			)
 		}
 
-		binary.LittleEndian.PutUint32(raw, uint32(sizeFromHeader+bytesAdded))
+		newSize, err := safecast.Convert[uint32, int32](sizeFromHeader + bytesAdded)
+		if err != nil {
+			return raw, false, err
+		}
+
+		binary.LittleEndian.PutUint32(raw, newSize)
 
 		return raw, true, nil
 	}

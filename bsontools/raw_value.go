@@ -108,7 +108,11 @@ func RawValueToStringBytes(in bson.RawValue) ([]byte, error) {
 		strlen := binary.LittleEndian.Uint32(in.Value)
 
 		if len(in.Value)-4 != int(strlen) {
-			return nil, fmt.Errorf("BSON string header says %d bytes but found %d", strlen, len(in.Value))
+			return nil, fmt.Errorf(
+				"BSON string header says %d bytes but found %d",
+				strlen,
+				len(in.Value),
+			)
 		}
 
 		return in.Value[4 : len(in.Value)-1], nil
