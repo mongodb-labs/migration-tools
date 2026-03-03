@@ -1,6 +1,6 @@
 module github.com/mongodb-labs/migration-tools
 
-go 1.25.0
+go 1.25.7
 
 require (
 	github.com/ccoveille/go-safecast/v2 v2.0.0

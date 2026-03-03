@@ -1,3 +1,5 @@
+name: Test
+
 on:
   push:
     branches:
@@ -9,8 +11,10 @@ on:
 jobs:
   unit:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-go@v5
-    - run: go test -v -race ./...
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
+        with:
+          # This matches what we use in the mongosync and mongo-tools repos.
+          version: 2026.2.19
+      - run: go test -v -race ./...
