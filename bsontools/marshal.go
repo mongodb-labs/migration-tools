@@ -71,6 +71,7 @@ func MarshalA[T ~[]byte](buf T, a bson.A) (bson.RawArray, error) {
 	return bson.RawArray(buf), nil
 }
 
+//nolint:cyclop
 func marshalEl(buf []byte, key string, val any) ([]byte, error) {
 	switch typedVal := val.(type) {
 	case float64:
