@@ -35,7 +35,8 @@ func (s *UnitTestSuite) TestCancelCause() {
 func (s *UnitTestSuite) TestUncanceled() {
 	ctx, cancel := WithCancelCause(context.Background())
 
-	s.Assert().Nil(ctx.Err())
+	//nolint:testifylint // this is the thing we're testing, not a precondition for later assertions
+	s.Assert().NoError(ctx.Err())
 
 	cancel(fmt.Errorf(""))
 }
