@@ -35,7 +35,6 @@ func TestFloat64(t *testing.T) {
 
 	for _, cur := range ints {
 		viaMarshal := mustConvertToRawValue(t, cur)
-
 		assert.Equal(t, cur, lo.Must(RawValueTo[float64](viaMarshal)), "round-trip")
 	}
 }

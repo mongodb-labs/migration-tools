@@ -10,15 +10,20 @@ import (
 )
 
 func TestLicenseRegexp1(t *testing.T) {
+	// We "misspell" license (UK spelling) intentionally
 	matches := []string{
 		"LICENSE",
 		"license",
 		"License",
+		//nolint:misspell
 		"LICENCE",
+		//nolint:misspell
 		"licence",
+		//nolint:misspell
 		"Licence",
 		"LICENSE.md",
 		"LICENSE.txt",
+
 		"licence.html",
 	}
 	for _, name := range matches {
@@ -41,8 +46,9 @@ func TestLicenseRegexp2(t *testing.T) {
 	matches := []string{
 		"MIT.license",
 		"something.LICENSE",
+
 		"foo.licence",
-		"bar.LICENCE",
+		"bar.LICENSE",
 	}
 	for _, name := range matches {
 		assert.True(t, licenseRegexp2.MatchString(name), "should match %q", name)
@@ -69,8 +75,11 @@ func TestLicenseFiles(t *testing.T) {
 	}
 
 	// License files that should be found.
+	//
+
 	mkFile(t, filepath.Join(vendorDir, "github.com/foo/bar", "LICENSE"))
 	mkFile(t, filepath.Join(vendorDir, "github.com/foo/bar", "subpkg", "LICENSE.md"))
+	//nolint:misspell
 	mkFile(t, filepath.Join(vendorDir, "github.com/baz/qux", "LICENCE"))
 	mkFile(t, filepath.Join(vendorDir, "github.com/baz/qux", "MIT.license"))
 
@@ -87,12 +96,17 @@ func TestLicenseFiles(t *testing.T) {
 	}
 
 	// Results should be sorted by path (which sorts packages alphabetically since vendor/ prefix is shared).
-	assert.Equal(t, []string{
-		"github.com/baz/qux/LICENCE",
-		"github.com/baz/qux/MIT.license",
-		"github.com/foo/bar/LICENSE",
-		"github.com/foo/bar/subpkg/LICENSE.md",
-	}, gotPkgs)
+	assert.Equal(
+		t,
+		[]string{
+			//nolint:misspell
+			"github.com/baz/qux/LICENCE",
+			"github.com/baz/qux/MIT.license",
+			"github.com/foo/bar/LICENSE",
+			"github.com/foo/bar/subpkg/LICENSE.md",
+		},
+		gotPkgs,
+	)
 }
 
 func TestLicenseFilesEmpty(t *testing.T) {

@@ -45,7 +45,7 @@ func TestFuture(t *testing.T) {
 }
 
 func TestFutureNil(t *testing.T) {
-	future, setter := New[error]()
+	future, setter := New[*string]()
 
 	select {
 	case <-future.Ready():
@@ -61,5 +61,5 @@ func TestFutureNil(t *testing.T) {
 		require.Fail(t, "should be ready")
 	}
 
-	assert.Nil(t, future.Get())
+	require.Nil(t, future.Get())
 }
