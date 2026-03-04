@@ -3,16 +3,16 @@ linters:
   default: none
   enable:
     - copyloopvar
-    #    - cyclop
+    - cyclop
     - dupword
-    #    - errcheck
+    # - errcheck
     - errname
     - errorlint
     - exptostd
-    #    - funlen
+    - funlen
     - gocheckcompilerdirectives
-    #    - gocognit
-    #    - gocyclo
+    - gocognit
+    - gocyclo
     - godot
     - govet
     - iface
@@ -21,7 +21,7 @@ linters:
     - intrange
     - maintidx
     - misspell
-    #    - nestif
+    - nestif
     - nilnesserr
     - nolintlint
     - predeclared
@@ -39,6 +39,10 @@ linters:
     errcheck:
       check-blank: true
       check-type-assertions: true
+
+    funlen:
+      lines: 100
+      statements: 75
 
     govet:
       enable:
@@ -177,6 +181,12 @@ linters:
         linters:
           - revive
           - staticcheck
+
+      # The shadow linter is generally useful but we intentionally shadow "err" all the time and it
+      # is generally safe to do so.
+      - text: 'shadow: declaration of "err" shadows declaration'
+        linters:
+          - govet
 
 issues:
   max-issues-per-linter: 0

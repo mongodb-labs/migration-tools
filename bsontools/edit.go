@@ -29,6 +29,22 @@ func (pe PointerTooDeepError) Error() string {
 	)
 }
 
+// elementInfo holds the position and metadata of a BSON element within a raw document.
+type elementInfo struct {
+	pos       int
+	valueAt   int
+	valueSize int
+	keyBytes  []byte
+	bsonType  bson.Type
+}
+
+// subDocResult holds the output of recursing into an embedded document or array.
+type subDocResult[T ~[]byte] struct {
+	raw        T
+	bytesAdded int32
+	found      bool
+}
+
 // ReplaceInRaw “surgically” replaces one value in a BSON document with another.
 // Its returned bool indicates whether the value was found.
 //
@@ -61,6 +77,15 @@ func replaceOrRemoveInRaw[T ~[]byte](
 		return nil, false, fmt.Errorf("too few bytes to read BSON length")
 	}
 
+	return editMatchingElement(raw, replacement, pointer, sizeFromHeader)
+}
+
+func editMatchingElement[T ~[]byte](
+	raw T,
+	replacement *bson.RawValue,
+	pointer []string,
+	sizeFromHeader int32,
+) (T, bool, error) {
 	pos := 4
 	for pos < len(raw)-1 {
 		el, _, ok := bsoncore.ReadElement(raw[pos:])
@@ -69,95 +94,46 @@ func replaceOrRemoveInRaw[T ~[]byte](
 		}
 
 		keyBytes := el.KeyBytes()
-
 		valueAt := pos + 1 + len(keyBytes) + 1
 
 		if string(keyBytes) != pointer[0] {
 			pos += len(el)
-
 			continue
 		}
 
-		bsonType := bson.Type(el[0])
-		valueSize := len(el) - len(keyBytes) - 2
+		info := elementInfo{
+			pos:       pos,
+			valueAt:   valueAt,
+			valueSize: len(el) - len(keyBytes) - 2,
+			keyBytes:  keyBytes,
+			bsonType:  bson.Type(el[0]),
+		}
 
 		var bytesAdded int32
+		var err error
 
-		// If this is the last node in the doc pointer, then remove/replace
-		// the element.
+		// If this is the last node in the doc pointer, then remove/replace the element.
+		//
+		//nolint:nestif
 		if len(pointer) == 1 {
 			if replacement == nil {
-				raw = slices.Delete(raw, pos, valueAt+valueSize)
-				var err error
-				bytesAdded, err = safecast.Convert[int32, int](-valueSize - len(keyBytes) - 2)
-				if err != nil {
-					return raw, false, err
-				}
+				raw, bytesAdded, err = removeElement(raw, info)
 			} else {
-				raw[pos] = byte(replacement.Type)
-
-				var err error
-				bytesAdded, err = safecast.Convert[int32, int](len(replacement.Value) - valueSize)
-				if err != nil {
-					return raw, false, err
-				}
-
-				raw = slices.Replace(
-					raw,
-					valueAt,
-					valueAt+valueSize,
-					replacement.Value...,
-				)
+				raw, bytesAdded, err = replaceElement(raw, *replacement, info)
+			}
+			if err != nil {
+				return raw, false, err
 			}
 		} else {
-			if bsonType != bson.TypeArray && bsonType != bson.TypeEmbeddedDocument {
-				return nil, false, PointerTooDeepError{
-					givenPointer:   slices.Clone(pointer),
-					elementType:    bsonType,
-					elementPointer: slices.Clone(pointer[:1]),
-				}
-			}
-
-			curDoc := raw[valueAt:]
-			oldDocSize, _, ok := bsoncore.ReadLength(curDoc)
-			if !ok {
-				return nil, false, fmt.Errorf("old embedded doc too short to read length")
-			}
-
-			var found bool
-			var err error
-			curDoc, found, err = replaceOrRemoveInRaw(curDoc, replacement, pointer[1:])
+			result, err := recurseIntoSubDoc(raw, replacement, pointer, info)
 			if err != nil {
-				var pe PointerTooDeepError
-				if errors.As(err, &pe) {
-					pe.givenPointer = append(
-						slices.Clone(pointer[:1]),
-						pe.givenPointer...,
-					)
-					pe.elementPointer = append(
-						slices.Clone(pointer[:1]),
-						pe.elementPointer...,
-					)
-
-					return raw, false, pe
-				}
+				return raw, false, err
 			}
-
-			if !found {
+			if !result.found {
 				return raw, false, nil
 			}
-
-			newDocSize, _, ok := bsoncore.ReadLength(curDoc)
-			if !ok {
-				return nil, false, fmt.Errorf("new embedded doc too short to read length")
-			}
-
-			bytesAdded = newDocSize - oldDocSize
-
-			raw = append(
-				raw[:valueAt],
-				curDoc...,
-			)
+			raw = result.raw
+			bytesAdded = result.bytesAdded
 		}
 
 		newSize, err := safecast.Convert[uint32, int32](sizeFromHeader + bytesAdded)
@@ -171,4 +147,70 @@ func replaceOrRemoveInRaw[T ~[]byte](
 	}
 
 	return raw, false, nil
+}
+
+func removeElement[T ~[]byte](raw T, info elementInfo) (T, int32, error) {
+	raw = slices.Delete(raw, info.pos, info.valueAt+info.valueSize)
+	bytesAdded, err := safecast.Convert[int32, int](-info.valueSize - len(info.keyBytes) - 2)
+	return raw, bytesAdded, err
+}
+
+func replaceElement[T ~[]byte](
+	raw T,
+	replacement bson.RawValue,
+	info elementInfo,
+) (T, int32, error) {
+	raw[info.pos] = byte(replacement.Type)
+	bytesAdded, err := safecast.Convert[int32, int](len(replacement.Value) - info.valueSize)
+	if err != nil {
+		return raw, 0, err
+	}
+	raw = slices.Replace(raw, info.valueAt, info.valueAt+info.valueSize, replacement.Value...)
+	return raw, bytesAdded, nil
+}
+
+func recurseIntoSubDoc[T ~[]byte](
+	raw T,
+	replacement *bson.RawValue,
+	pointer []string,
+	info elementInfo,
+) (subDocResult[T], error) {
+	if info.bsonType != bson.TypeArray && info.bsonType != bson.TypeEmbeddedDocument {
+		return subDocResult[T]{}, PointerTooDeepError{
+			givenPointer:   slices.Clone(pointer),
+			elementType:    info.bsonType,
+			elementPointer: slices.Clone(pointer[:1]),
+		}
+	}
+
+	curDoc := raw[info.valueAt:]
+	oldDocSize, _, ok := bsoncore.ReadLength(curDoc)
+	if !ok {
+		return subDocResult[T]{}, fmt.Errorf("old embedded doc too short to read length")
+	}
+
+	curDoc, found, err := replaceOrRemoveInRaw(curDoc, replacement, pointer[1:])
+	if err != nil {
+		var pe PointerTooDeepError
+		if errors.As(err, &pe) {
+			pe.givenPointer = append(slices.Clone(pointer[:1]), pe.givenPointer...)
+			pe.elementPointer = append(slices.Clone(pointer[:1]), pe.elementPointer...)
+			return subDocResult[T]{}, pe
+		}
+	}
+
+	if !found {
+		return subDocResult[T]{}, nil
+	}
+
+	newDocSize, _, ok := bsoncore.ReadLength(curDoc)
+	if !ok {
+		return subDocResult[T]{}, fmt.Errorf("new embedded doc too short to read length")
+	}
+
+	return subDocResult[T]{
+		raw:        append(raw[:info.valueAt], curDoc...),
+		bytesAdded: newDocSize - oldDocSize,
+		found:      true,
+	}, nil
 }
