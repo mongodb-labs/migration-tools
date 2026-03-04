@@ -132,7 +132,7 @@ func RawValueToStringBytes(in bson.RawValue) ([]byte, error) {
 //
 //	str, err := RawValueTo[string](rv)
 //
-//nolint:cyclop,funlen,gocognit,gocyclo
+//nolint:cyclop,errcheck,funlen,gocognit,gocyclo
 func RawValueTo[T unmarshalTargets](in bson.RawValue) (T, error) {
 	var zero T
 
