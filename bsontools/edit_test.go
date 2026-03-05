@@ -324,7 +324,9 @@ func TestReplaceInRaw_MissingKey(t *testing.T) {
 		{"trailing_sibling", "do_not_lose_me"},
 	}
 
-	rawDoc, _ := bson.Marshal(originalDoc)
+	rawDoc, err := bson.Marshal(originalDoc)
+	require.NoError(t, err)
+
 	origDoc := slices.Clone(rawDoc)
 	newRawValue := ToRawValue("new\x00")
 
