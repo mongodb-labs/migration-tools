@@ -5,7 +5,7 @@ linters:
     - copyloopvar
     - cyclop
     - dupword
-    # - errcheck
+    - errcheck
     - errname
     - errorlint
     - exptostd
