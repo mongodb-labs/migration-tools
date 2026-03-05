@@ -57,7 +57,7 @@ func replaceOrRemoveInRaw[T ~[]byte](raw T, replacement *bson.RawValue, pointer 
 	}
 
 	pos := 4
-	for pos < len(raw)-1 {
+	for pos < int(sizeFromHeader)-1 {
 		el, _, ok := bsoncore.ReadElement(raw[pos:])
 		if !ok {
 			return nil, false, fmt.Errorf("invalid BSON element at offset %d", pos)
@@ -127,6 +127,8 @@ func replaceOrRemoveInRaw[T ~[]byte](raw T, replacement *bson.RawValue, pointer 
 					)
 
 					return raw, false, pe
+				} else {
+					return nil, false, fmt.Errorf("replace %#q: %w", pointer[1:], err)
 				}
 			}
 
