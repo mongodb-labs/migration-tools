@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+//nolint:funlen
 func Test_Option_BSON(t *testing.T) {
 	type MyType struct {
 		IsNone          Option[int]
