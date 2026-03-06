@@ -370,7 +370,6 @@ func TestReplaceInRaw_EmbeddedDocumentBugs(t *testing.T) {
 	resultBSON := bson.Raw(resultRaw)
 	require.NoError(t, resultBSON.Validate(), "result doc must be valid")
 
-	// ASSERT THE REPLACEMENT WORKED
 	targetRV, err := resultBSON.LookupErr("parent", "target")
 	require.NoError(t, err, "must find 'parent.target'")
 	assert.Equal(t, "new_value", targetRV.StringValue(), "parent.target new value")
