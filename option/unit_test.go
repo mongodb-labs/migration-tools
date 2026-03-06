@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+//nolint:funlen
 func Test_Option_BSON(t *testing.T) {
 	type MyType struct {
 		IsNone          Option[int]
@@ -265,23 +266,10 @@ func Test_Option(t *testing.T) {
 	fooPtr := Some(foo).ToPointer()
 
 	assert.Equal(t, &foo, fooPtr)
-
 	assert.Equal(t, Some(foo), FromPointer(fooPtr))
-
-	assert.Equal(t,
-		foo,
-		Some(foo).OrZero(),
-	)
-
-	assert.Equal(t,
-		"",
-		None[string]().OrZero(),
-	)
-
-	assert.Equal(t,
-		"elf",
-		None[string]().OrElse("elf"),
-	)
+	assert.Equal(t, foo, Some(foo).OrZero())
+	assert.Empty(t, None[string]().OrZero())
+	assert.Equal(t, "elf", None[string]().OrElse("elf"))
 
 	val, has := Some(123).Get()
 	assert.True(t, has)
@@ -309,6 +297,7 @@ func Test_Option_IfNonZero(t *testing.T) {
 	assertIfNonZero(t, bson.D(nil), bson.D{})
 
 	type myStruct struct {
+		//nolint:unused
 		name string
 	}
 

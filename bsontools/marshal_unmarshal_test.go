@@ -53,14 +53,17 @@ func TestMarshalUnmarshal(t *testing.T) {
 		},
 	}
 
-	raw := bson.Raw{}
+	var raw bson.Raw
 
 	for _, someDoc := range docs {
+		// We deliberately re-use this variable here to test that this code works with a "dirty"
+		// slice.
 		raw = raw[:0]
 
 		t.Logf("cur doc: %+v", someDoc)
 
-		raw, err := MarshalD(raw, someDoc)
+		var err error
+		raw, err = MarshalD(raw, someDoc)
 		require.NoError(t, err)
 
 		fromLib, err := bson.Marshal(someDoc)

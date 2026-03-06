@@ -1,8 +1,193 @@
 version: "2"
 linters:
+  default: none
+  enable:
+    - copyloopvar
+    - cyclop
+    - dupword
+    - errcheck
+    - errname
+    - errorlint
+    - exptostd
+    - funlen
+    - gocheckcompilerdirectives
+    - gocognit
+    - gocyclo
+    - godot
+    - govet
+    - iface
+    - importas
+    - ineffassign
+    - intrange
+    - maintidx
+    - misspell
+    - nestif
+    - nilnesserr
+    - nolintlint
+    - predeclared
+    - recvcheck
+    - revive
+    - staticcheck
+    - testifylint
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+
+  settings:
+    errcheck:
+      check-blank: true
+      check-type-assertions: true
+
+    funlen:
+      lines: 100
+      statements: 75
+
+    govet:
+      enable:
+        - findcall
+        - nilness
+        - shadow
+        - sortslice
+        - unusedwrite
+
+    importas:
+      alias:
+        - pkg: github.com/deckarep/golang-set/v2
+          alias: mapset
+      no-extra-aliases: true
+
+    misspell:
+      locale: US
+      extra-words:
+        - typo: cancelation
+          correction: cancellation
+        - typo: cancelations
+          correction: cancellations
+        - typo: cancelling
+          correction: canceling
+        - typo: cancelled
+          correction: canceled
+
+    recvcheck:
+      exclusions:
+        # It's normal for `Marshal*` methods to not take a pointer.
+        - "*.MarshalBSON"
+        # We have some structs that are passed around as non-pointers, but `UnmarshalBSON` always
+        # takes a pointer since it's populating the receiver directly.
+        - "*.UnmarshalBSON"
+        - "*.UnmarshalBSONValue"
+
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: argument-limit
+          arguments:
+            - 5
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        # - name: empty-block  We use empty blocks on purpose.
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        # - name: exported  This causes too many useless renamings.
+        - name: function-result-limit
+          arguments:
+            - 3
+        - name: import-shadowing
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: unused-receiver
+        - name: var-declaration
+        # - name: var-naming   This causes too many useless renamings.
+
+    staticcheck:
+      checks:
+        - all
+        - "-QF1001" # this suggests applying De Morgan's Laws, and is very aggressive.
+        - "-QF1008" # this suggests removing embedded fields from calls, but having them is often clearer
+        - "-ST1003" # this suggests lots of useless variable renaming
+
+    testifylint:
+      enable:
+        - bool-compare
+        - compares
+        - empty
+        - error-is-as
+        - error-nil
+        - expected-actual
+        - len
+        - require-error
+        - suite-extra-assert-call
+      disable:
+        - float-compare
+        # This checks for use of `require` assertions in goroutines outside the
+        # main routine. We really _should_ fix this but it's a lot to deal with
+        # at the moment.
+        - go-require
+        - suite-dont-use-pkg
+      require-error:
+        # The default is to insist on require not only for "no error" checks but also for "error is X"
+        # checks, which is weird.
+        fn-pattern: ^NoErrorf?$
+      suite-extra-assert-call:
+        mode: require
+
+    unused:
+      # If a field is written but never read, it's almost certainly not being used. The one exception
+      # (for which we'll add a `nolint` comment) is with fields that exist solely for serialization
+      # (to YAML, BSON, etc.).
+      field-writes-are-uses: false
+      # We want to actually check that exported fields are used.
+      exported-fields-are-used: false
+      # Setting this to false caught some places where we created and wrote to local variables but
+      # never read from them.
+      local-variables-are-used: false
+
+    usetesting:
+      # We _do_ want to use the testing package's versions of these methods. They ensure that we clean
+      # up after ourselves automatically.
+      os-setenv: true
+      os-temp-dir: true
+
   exclusions:
+    generated: lax
+    warn-unused: true
+    presets:
+      - comments
+      - std-error-handling
 
     rules:
-      - text: 'composites: .+(bson\.(E|Timestamp))'
+      - text: 'composites: .+bson\.(Binary|E|Timestamp) struct literal uses unkeyed fields'
         linters:
           - govet
+
+      # The linter that requires unused parameters to be named '_' conflicts with this staticcheck
+      # rule to omit unused receiver names.
+      - text: "receiver name should not be an underscore, omit the name if it is unused"
+        linters:
+          - revive
+          - staticcheck
+
+      # The shadow linter is generally useful but we intentionally shadow "err" all the time and it
+      # is generally safe to do so.
+      - text: 'shadow: declaration of "err" shadows declaration'
+        linters:
+          - govet
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
