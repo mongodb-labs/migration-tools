@@ -377,5 +377,10 @@ func TestReplaceInRaw_EmbeddedDocumentBugs(t *testing.T) {
 	// Check for truncation bugs
 	siblingRV, err := resultBSON.LookupErr("trailing_sibling")
 	require.NoError(t, err, "'trailing_sibling' must remain")
-	assert.Equal(t, "do_not_lose_me", siblingRV.StringValue(), "'trailing_sibling' must be unmodified")
+	assert.Equal(
+		t,
+		"do_not_lose_me",
+		siblingRV.StringValue(),
+		"'trailing_sibling' must be unmodified",
+	)
 }
