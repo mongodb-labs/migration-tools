@@ -314,3 +314,73 @@ func TestRemoveFromRaw_Shallow_RemoveFromEnd(t *testing.T) {
 		)
 	}
 }
+
+func TestReplaceInRaw_MissingKey(t *testing.T) {
+	// SETUP: An embedded document followed by a sibling field.
+	originalDoc := bson.D{
+		{"parent", bson.D{
+			{"existing_key", "value"},
+		}},
+		{"trailing_sibling", "do_not_lose_me"},
+	}
+
+	rawDoc, err := bson.Marshal(originalDoc)
+	require.NoError(t, err)
+
+	origDoc := slices.Clone(rawDoc)
+	newRawValue := ToRawValue("new\x00")
+
+	newDoc, found, err := ReplaceInRaw(rawDoc, newRawValue, "parent", "missing_key")
+	require.NoError(t, err, "ReplaceInRaw")
+	require.False(t, found, "should not find missing key")
+
+	assert.Equal(t, origDoc, newDoc, "doc must be unaltered")
+}
+
+func TestReplaceInRaw_EmbeddedDocumentBugs(t *testing.T) {
+	// SETUP: Construct the document to trigger both bugs.
+	// It MUST have an embedded document, followed by another field.
+	originalDoc := bson.D{
+		{"parent", bson.D{
+			{"target", "old_value"},
+		}},
+		{"trailing_sibling", "do_not_lose_me"}, // This field is the victim of both bugs
+	}
+
+	rawDoc, err := bson.Marshal(originalDoc)
+	require.NoError(t, err, "marshal original doc")
+
+	// Prepare the replacement value ("new_value")
+	bType, replacementBytes, err := bson.MarshalValue("new_value")
+	require.NoError(t, err, "marshal replacement value")
+
+	newRawValue := bson.RawValue{
+		Type:  bType,
+		Value: replacementBytes,
+	}
+
+	// ACT: Attempt to replace "parent.target"
+	resultRaw, found, err := ReplaceInRaw(rawDoc, newRawValue, "parent", "target")
+
+	// Check for overslicing / parsing crash
+	require.NoError(t, err, "ReplaceInRaw should succeed")
+	assert.True(t, found, "should find and replace the value")
+
+	// Convert the raw bytes to bson.Raw to use traversal methods
+	resultBSON := bson.Raw(resultRaw)
+	require.NoError(t, resultBSON.Validate(), "result doc must be valid")
+
+	targetRV, err := resultBSON.LookupErr("parent", "target")
+	require.NoError(t, err, "must find 'parent.target'")
+	assert.Equal(t, "new_value", targetRV.StringValue(), "parent.target new value")
+
+	// Check for truncation bugs
+	siblingRV, err := resultBSON.LookupErr("trailing_sibling")
+	require.NoError(t, err, "'trailing_sibling' must remain")
+	assert.Equal(
+		t,
+		"do_not_lose_me",
+		siblingRV.StringValue(),
+		"'trailing_sibling' must be unmodified",
+	)
+}

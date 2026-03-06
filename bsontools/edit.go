@@ -87,7 +87,7 @@ func editMatchingElement[T ~[]byte](
 	sizeFromHeader int32,
 ) (T, bool, error) {
 	pos := 4
-	for pos < len(raw)-1 {
+	for pos < int(sizeFromHeader)-1 {
 		el, _, ok := bsoncore.ReadElement(raw[pos:])
 		if !ok {
 			return nil, false, fmt.Errorf("invalid BSON element at offset %d", pos)
@@ -136,7 +136,7 @@ func editMatchingElement[T ~[]byte](
 			bytesAdded = result.bytesAdded
 		}
 
-		newSize, err := safecast.Convert[uint32, int32](sizeFromHeader + bytesAdded)
+		newSize, err := safecast.Convert[uint32](sizeFromHeader + bytesAdded)
 		if err != nil {
 			return raw, false, err
 		}
@@ -151,7 +151,7 @@ func editMatchingElement[T ~[]byte](
 
 func removeElement[T ~[]byte](raw T, info elementInfo) (T, int32, error) {
 	raw = slices.Delete(raw, info.pos, info.valueAt+info.valueSize)
-	bytesAdded, err := safecast.Convert[int32, int](-info.valueSize - len(info.keyBytes) - 2)
+	bytesAdded, err := safecast.Convert[int32](-info.valueSize - len(info.keyBytes) - 2)
 	return raw, bytesAdded, err
 }
 
@@ -161,7 +161,7 @@ func replaceElement[T ~[]byte](
 	info elementInfo,
 ) (T, int32, error) {
 	raw[info.pos] = byte(replacement.Type)
-	bytesAdded, err := safecast.Convert[int32, int](len(replacement.Value) - info.valueSize)
+	bytesAdded, err := safecast.Convert[int32](len(replacement.Value) - info.valueSize)
 	if err != nil {
 		return raw, 0, err
 	}
@@ -197,6 +197,8 @@ func recurseIntoSubDoc[T ~[]byte](
 			pe.elementPointer = append(slices.Clone(pointer[:1]), pe.elementPointer...)
 			return subDocResult[T]{}, pe
 		}
+
+		return subDocResult[T]{}, fmt.Errorf("replace %#q: %w", pointer[1:], err)
 	}
 
 	if !found {
