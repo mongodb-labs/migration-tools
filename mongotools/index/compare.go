@@ -122,7 +122,10 @@ func DescribeSpecDifferences(specA, specB bson.Raw) (option.Option[SpecDiff], er
 
 	orderDifferFields, err := getOrderDifferOpts(specA, specB)
 	if err != nil {
-		return option.None[SpecDiff](), fmt.Errorf("compare order-sensitive index spec fields: %w", err)
+		return option.None[SpecDiff](), fmt.Errorf(
+			"compare order-sensitive index spec fields: %w",
+			err,
+		)
 	}
 
 	if len(orderDifferFields) == 0 {
