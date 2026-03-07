@@ -66,11 +66,10 @@ func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
 		return nil, err
 	}
 
-	// We can safely ignore the `v` field when comparing indexes on the source versus destination.
-	// Mongosync doesn't support any server versions with v0 indexes: the server dropped support for
-	// them when it dropped MMAPv1 support in 4.2 via SERVER-22987. There are no backwards-
-	// incompatible features between v1 and v2 indexes. v2 indexes only added `NumberDecimal`
-	// and `Collation`.
+	// We can safely ignore the `v` field when comparing indexes. This is
+	// because migration tooling only supports v1+ indexes. Also, there are no
+	// backwards-incompatible features between v1 and v2 indexes. v2 indexes
+	// only added `NumberDecimal` and `Collation`.
 	spec, err = omitVersionFromIndexSpec(spec)
 	if err != nil {
 		return nil, err
