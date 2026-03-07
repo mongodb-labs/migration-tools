@@ -43,7 +43,19 @@ func (s *UnitTestSuite) TestDescribeDiffs() {
 				{"sparse", true},
 			},
 			label:      "sparse",
-			diffPieces: []string{"sparse"},
+			diffPieces: []string{"/sparse"},
+		},
+		{
+			a: bson.D{
+				{"v", 2},
+				{"key", bson.D{{"a", 1}, {"b", 1}}},
+			},
+			b: bson.D{
+				{"v", 1},
+				{"key", bson.D{{"b", 1}, {"a", 1}}},
+			},
+			label:      "sparse",
+			diffPieces: []string{"key"},
 		},
 	}
 
@@ -70,7 +82,7 @@ func (s *UnitTestSuite) TestDescribeDiffs() {
 	}
 }
 
-func (s *UnitTestSuite) TestIgnoreIndexFields() {
+func (s *UnitTestSuite) TestSameSpec() {
 	cases := []struct {
 		a, b  bson.D
 		label string
@@ -87,7 +99,6 @@ func (s *UnitTestSuite) TestIgnoreIndexFields() {
 			},
 			label: "background",
 		},
-
 		{
 			a: bson.D{
 				{"v", 2},
@@ -99,6 +110,19 @@ func (s *UnitTestSuite) TestIgnoreIndexFields() {
 				{"ns", "foo.bar"},
 			},
 			label: "ns",
+		},
+		{
+			a: bson.D{
+				{"v", 2},
+				{"key", bson.D{{"a", 1}}},
+				{"sparse", true},
+			},
+			b: bson.D{
+				{"v", 1},
+				{"sparse", 1},
+				{"key", bson.D{{"a", 1}}},
+			},
+			label: "spec field order; sparse type",
 		},
 	}
 
