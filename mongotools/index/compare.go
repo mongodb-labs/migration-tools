@@ -66,10 +66,10 @@ func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
 		return nil, err
 	}
 
-	// We can safely ignore the `v` field when comparing indexes. This is
-	// because migration tooling only supports v1+ indexes. Also, there are no
-	// backwards-incompatible features between v1 and v2 indexes. v2 indexes
-	// only added `NumberDecimal` and `Collation`.
+	// We can ignore the `v` field when comparing indexes. This is because:
+	// - We already validated that the version is v1 or v2.
+	// - There are no backwards-incompatible features between v1 & v2 indexes.
+	//   (v2 indexes only added `NumberDecimal` and `Collation`.)
 	spec, err = omitVersionFromIndexSpec(spec)
 	if err != nil {
 		return nil, err
