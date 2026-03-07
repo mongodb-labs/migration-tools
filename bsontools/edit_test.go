@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
 var referenceValues = []any{
@@ -60,6 +61,36 @@ func TestRemoveFromRaw_Missing(t *testing.T) {
 
 		assert.Equal(t, inRawCopy, inRaw, "should not change doc")
 	}
+}
+
+func TestRemoveFromRaw_Background(t *testing.T) {
+	indexSpec := bson.D{
+		{"v", 1},
+		{"key", bson.D{{"a", 1}}},
+		{"background", true},
+	}
+
+	raw, err := bson.Marshal(indexSpec)
+	require.NoError(t, err)
+
+	raw, _, err = RemoveFromRaw(raw, "background")
+	require.NoError(t, err)
+
+	_, err = RawLookup[bool](raw, "notThere")
+	assert.ErrorIs(t, err, bsoncore.ErrElementNotFound)
+}
+
+func TestReplaceInRaw_TypeChange(t *testing.T) {
+	doc := bson.M{"expireAfterSeconds": int64(1000)}
+
+	raw, err := bson.Marshal(doc)
+	require.NoError(t, err)
+
+	raw, _, err = ReplaceInRaw(raw, ToRawValue(int32(1000)), "expireAfterSeconds")
+	require.NoError(t, err)
+
+	require.NoError(t, bson.Unmarshal(raw, &doc))
+	assert.Equal(t, bson.M{"expireAfterSeconds": int32(1000)}, doc)
 }
 
 func TestRemoveFromRaw_Oplog(t *testing.T) {

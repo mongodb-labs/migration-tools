@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -26,6 +25,57 @@ const (
 	bitsKey               = "bits"
 	sparseKey             = "sparse"
 )
+
+func (s *UnitTestSuite) TestIgnoreIndexFields() {
+	cases := []struct {
+		a, b  bson.D
+		label string
+	}{
+		{
+			a: bson.D{
+				{"v", 2},
+				{"key", bson.D{{"a", 1}}},
+			},
+			b: bson.D{
+				{"v", 1},
+				{"key", bson.D{{"a", 1}}},
+				{"background", true},
+			},
+			label: "background",
+		},
+
+		{
+			a: bson.D{
+				{"v", 2},
+				{"key", bson.D{{"a", 1}}},
+			},
+			b: bson.D{
+				{"v", 1},
+				{"key", bson.D{{"a", 1}}},
+				{"ns", "foo.bar"},
+			},
+			label: "ns",
+		},
+	}
+
+	for _, curCase := range cases {
+		s.Run(
+			curCase.label,
+			func() {
+				a, err := bson.Marshal(curCase.a)
+				s.Require().NoError(err)
+
+				b, err := bson.Marshal(curCase.b)
+				s.Require().NoError(err)
+
+				equal, err := AreSpecsEqual(a, b)
+				s.Require().NoError(err)
+
+				s.Assert().True(equal)
+			},
+		)
+	}
+}
 
 func (s *UnitTestSuite) Test_ConvertLegacyIndexKeys() {
 	type testCase struct {
@@ -529,14 +579,4 @@ func (s *UnitTestSuite) testIndexKeyConversions(
 	s.Assert().Equal(expectModernization, didModernize)
 
 	s.Assert().Equal(expectedIndex, index, "expected %+v; got %+v", expectedIndex, index)
-}
-
-func cloneD(t *testing.T, in bson.D) bson.D {
-	raw, err := bson.Marshal(in)
-	require.NoError(t, err)
-
-	var out bson.D
-	require.NoError(t, bson.Unmarshal(raw, &out))
-
-	return out
 }

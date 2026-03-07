@@ -24,6 +24,14 @@ var optsWhereOrderIsSignificant = mapset.NewSet(
 	"partialFilterExpression",
 )
 
+var optsToIgnore = mapset.NewSet(
+	// v4.4 stopped adding “ns” to index fields.
+	"ns",
+
+	// v4.2+ ignores this field.
+	"background",
+)
+
 // AreSpecsEqual compares two index specifications and returns a boolean
 // that indicates whether they match. It:
 // 1) normalizes legacy index specifications
@@ -58,12 +66,12 @@ func AreSpecsEqual(specA, specB bson.Raw) (bool, error) {
 func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
 	spec, _, err := ModernizeSpec(spec)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("modernizing: %w", err)
 	}
 
 	spec, err = normalizeTypesInSpec(spec)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("normalizing types: %w", err)
 	}
 
 	// We can ignore the `v` field when comparing indexes. This is because:
@@ -73,6 +81,13 @@ func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
 	spec, err = omitVersionFromIndexSpec(spec)
 	if err != nil {
 		return nil, err
+	}
+
+	for field := range optsToIgnore.Iter() {
+		spec, _, err = bsontools.RemoveFromRaw(spec, field)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return spec, nil

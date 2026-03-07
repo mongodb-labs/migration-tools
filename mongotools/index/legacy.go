@@ -34,7 +34,7 @@ func ModernizeSpec(indexSpec bson.Raw) (bson.Raw, bool, error) {
 		return nil, false, err
 	}
 	if !shouldModernize {
-		return nil, false, nil
+		return indexSpec, false, nil
 	}
 
 	keySpec, err := bsontools.RawLookup[bson.Raw](indexSpec, "key")
