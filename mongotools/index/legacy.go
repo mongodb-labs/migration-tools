@@ -37,36 +37,14 @@ func ModernizeSpec(indexSpec bson.Raw) (bson.Raw, bool, error) {
 		return nil, false, nil
 	}
 
-	anythingWasModernized := false
-
-	var modernizedSpec bson.D
-
 	keySpec, err := bsontools.RawLookup[bson.Raw](indexSpec, "key")
 	if err != nil {
 		return nil, false, fmt.Errorf("reading `key` from index spec (%+v): %w", indexSpec, err)
 	}
 
-	for keyElem, err := range bsontools.RawElements(keySpec) {
-		if err != nil {
-			return nil, false, fmt.Errorf("iterating index spec’s `key` subdocument (%+v): %w", indexSpec, err)
-		}
-
-		key, err := keyElem.KeyErr()
-		if err != nil {
-			return nil, false, fmt.Errorf("parsing field name in index spec’s key (spec: %+v): %w", indexSpec, err)
-		}
-
-		val, err := keyElem.ValueErr()
-		if err != nil {
-			return nil, false, fmt.Errorf("parsing index spec key’s %#q (spec: %+v): %w", key, indexSpec, err)
-		}
-
-		if shouldModernizeValue(val) {
-			anythingWasModernized = true
-			val = modernizedKeyElemValue
-		}
-
-		modernizedSpec = append(modernizedSpec, bson.E{key, val})
+	modernizedSpec, anythingWasModernized, err := getModernizedKeySpec(keySpec)
+	if err != nil {
+		return nil, false, fmt.Errorf("modernizing index’s key spec (index: %+v): %w", indexSpec, err)
 	}
 
 	if !anythingWasModernized {
@@ -86,6 +64,36 @@ func ModernizeSpec(indexSpec bson.Raw) (bson.Raw, bool, error) {
 	lo.Assertf(found, "must have found the key spec")
 
 	return newSpec, true, nil
+}
+
+func getModernizedKeySpec(keySpec bson.Raw) (bson.D, bool, error) {
+	var modernizedSpec bson.D
+	var anythingWasModernized bool
+
+	for keyElem, err := range bsontools.RawElements(keySpec) {
+		if err != nil {
+			return nil, false, fmt.Errorf("iterating key spec (%+v): %w", keySpec, err)
+		}
+
+		key, err := keyElem.KeyErr()
+		if err != nil {
+			return nil, false, fmt.Errorf("parsing field name key spec (%+v): %w", keySpec, err)
+		}
+
+		val, err := keyElem.ValueErr()
+		if err != nil {
+			return nil, false, fmt.Errorf("parsing key spec’s %#q (spec: %+v): %w", key, keySpec, err)
+		}
+
+		if shouldModernizeValue(val) {
+			anythingWasModernized = true
+			val = modernizedKeyElemValue
+		}
+
+		modernizedSpec = append(modernizedSpec, bson.E{key, val})
+	}
+
+	return modernizedSpec, anythingWasModernized, nil
 }
 
 // shouldModernizeSpec returns true if the index is pre-v2.

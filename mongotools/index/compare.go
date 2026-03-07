@@ -1,7 +1,7 @@
+// Package index exports index-related functions.
 package index
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -33,22 +33,37 @@ func AreSpecsEqual(specA, specB bson.Raw) (bool, error) {
 	specA = slices.Clone(specA)
 	specB = slices.Clone(specB)
 
-	specA, _, err := ModernizeSpec(specA)
-	if err != nil {
-		return false, err
-	}
-	specB, _, err = ModernizeSpec(specB)
+	specA, err := prepareIndexSpecForEqualityCheck(specA)
 	if err != nil {
 		return false, err
 	}
 
-	specA, err = normalizeTypesInSpec(specA)
+	specB, err = prepareIndexSpecForEqualityCheck(specB)
 	if err != nil {
 		return false, err
 	}
-	specB, err = normalizeTypesInSpec(specB)
+
+	equalNoOrder, err := bsontools.EqualIgnoringOrder(specA, specB)
 	if err != nil {
 		return false, err
+	}
+
+	if !equalNoOrder {
+		return false, nil
+	}
+
+	return orderSensitivePartsMatch(specA, specB)
+}
+
+func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
+	spec, _, err := ModernizeSpec(spec)
+	if err != nil {
+		return nil, err
+	}
+
+	spec, err = normalizeTypesInSpec(spec)
+	if err != nil {
+		return nil, err
 	}
 
 	// We can safely ignore the `v` field when comparing indexes on the source versus destination.
@@ -56,30 +71,16 @@ func AreSpecsEqual(specA, specB bson.Raw) (bool, error) {
 	// them when it dropped MMAPv1 support in 4.2 via SERVER-22987. There are no backwards-
 	// incompatible features between v1 and v2 indexes. v2 indexes only added `NumberDecimal`
 	// and `Collation`.
-	specA, err = omitVersionFromIndexSpec(specA)
+	spec, err = omitVersionFromIndexSpec(spec)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
-	specB, err = omitVersionFromIndexSpec(specB)
-	if err != nil {
-		return false, err
-	}
+	return spec, nil
+}
 
-	sortedSpecA := slices.Clone(specA)
-	if err := bsontools.SortFields(sortedSpecA); err != nil {
-		return false, fmt.Errorf("sorting spec A’s fields: %w", err)
-	}
-
-	sortedSpecB := slices.Clone(specB)
-	if err := bsontools.SortFields(sortedSpecB); err != nil {
-		return false, fmt.Errorf("sorting spec A’s fields: %w", err)
-	}
-
-	if !bytes.Equal(sortedSpecA, sortedSpecB) {
-		return false, nil
-	}
-
+// This assumes the specs are pre-prepared as above.
+func orderSensitivePartsMatch(specA, specB bson.Raw) (bool, error) {
 	for optName := range optsWhereOrderIsSignificant.Iter() {
 		var optValueA, optValueB bson.RawValue
 
