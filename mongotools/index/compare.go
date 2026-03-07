@@ -10,19 +10,21 @@ import (
 	"github.com/ccoveille/go-safecast/v2"
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/mongodb-labs/migration-tools/bsontools"
+	"github.com/mongodb-labs/migration-tools/option"
 	"github.com/samber/lo"
+	"github.com/wI2L/jsondiff"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
 // These index options must be compared with sensitivity to field order.
-var optsWhereOrderIsSignificant = mapset.NewSet(
+var optsWhereOrderMatters = []string{
 	"key",
 
 	// NB: This is here in case any filters contain embedded documents, which
 	// MongoDB compares order-sensitively.
 	"partialFilterExpression",
-)
+}
 
 var optsToIgnore = mapset.NewSet(
 	// v4.4 stopped adding “ns” to index fields.
@@ -37,30 +39,60 @@ var optsToIgnore = mapset.NewSet(
 // 1) normalizes legacy index specifications
 // 2) omits the version field
 // 3) correctly considers or ignores field order as appropriate.
-func AreSpecsEqual(specA, specB bson.Raw) (bool, error) {
+func DescribeSpecDifferences(specA, specB bson.Raw) (option.Option[string], error) {
 	specA = slices.Clone(specA)
 	specB = slices.Clone(specB)
 
 	specA, err := prepareIndexSpecForEqualityCheck(specA)
 	if err != nil {
-		return false, err
+		return option.None[string](), err
 	}
 
 	specB, err = prepareIndexSpecForEqualityCheck(specB)
 	if err != nil {
-		return false, err
+		return option.None[string](), err
 	}
 
 	equalNoOrder, err := bsontools.EqualIgnoringOrder(specA, specB)
 	if err != nil {
-		return false, err
+		return option.None[string](), err
 	}
 
 	if !equalNoOrder {
-		return false, nil
+		specAExtJSON, err := bson.MarshalExtJSON(specA, true, false)
+		if err != nil {
+			return option.Some(fmt.Sprintf(
+				"specs differ; failed to marshal spec A to ext JSON (%v)",
+				err,
+			)), nil
+		}
+		fmt.Printf("---- ejson: %#q\n\n", specAExtJSON)
+
+		specBExtJSON, err := bson.MarshalExtJSON(specB, true, false)
+		if err != nil {
+			return option.Some(fmt.Sprintf(
+				"specs differ; failed to marshal spec B to ext JSON (%v)",
+				err,
+			)), nil
+		}
+
+		patch, err := jsondiff.Compare(
+			specAExtJSON,
+			specBExtJSON,
+			jsondiff.Factorize(),
+			jsondiff.Rationalize(),
+		)
+		if err != nil {
+			return option.Some(fmt.Sprintf(
+				"specs differ; failed to create ext JSON patch (%v)",
+				err,
+			)), nil
+		}
+
+		return option.Some(patch.String()), nil
 	}
 
-	return orderSensitivePartsMatch(specA, specB)
+	return describeOrderSensitivePartsDiff(specA, specB)
 }
 
 func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
@@ -94,8 +126,10 @@ func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
 }
 
 // This assumes the specs are pre-prepared as above.
-func orderSensitivePartsMatch(specA, specB bson.Raw) (bool, error) {
-	for optName := range optsWhereOrderIsSignificant.Iter() {
+func describeOrderSensitivePartsDiff(specA, specB bson.Raw) (option.Option[string], error) {
+	var orderDifferOpts []string
+
+	for _, optName := range optsWhereOrderMatters {
 		var optValueA, optValueB bson.RawValue
 
 		// NB: By this point we know the specs match when ignoring order.
@@ -107,7 +141,7 @@ func orderSensitivePartsMatch(specA, specB bson.Raw) (bool, error) {
 				continue
 			}
 
-			return false, fmt.Errorf(
+			return option.None[string](), fmt.Errorf(
 				"failed to look up %#q in spec A (%v): %w",
 				optName,
 				specA,
@@ -121,7 +155,7 @@ func orderSensitivePartsMatch(specA, specB bson.Raw) (bool, error) {
 				continue
 			}
 
-			return false, fmt.Errorf(
+			return option.None[string](), fmt.Errorf(
 				"failed to look up %#q in spec B (%v): %w",
 				optName,
 				specB,
@@ -130,11 +164,15 @@ func orderSensitivePartsMatch(specA, specB bson.Raw) (bool, error) {
 		}
 
 		if !optValueA.Equal(optValueB) {
-			return false, nil
+			orderDifferOpts = append(orderDifferOpts, optName)
 		}
 	}
 
-	return true, nil
+	if len(orderDifferOpts) == 0 {
+		return option.None[string](), nil
+	}
+
+	return option.Some(fmt.Sprintf("field order differs: %#q", orderDifferOpts)), nil
 }
 
 // The server stores certain index values differently from how they’re

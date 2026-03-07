@@ -26,6 +26,50 @@ const (
 	sparseKey             = "sparse"
 )
 
+func (s *UnitTestSuite) TestDescribeDiffs() {
+	cases := []struct {
+		a, b       bson.D
+		diffPieces []string
+		label      string
+	}{
+		{
+			a: bson.D{
+				{"v", 2},
+				{"key", bson.D{{"a", 1}}},
+			},
+			b: bson.D{
+				{"v", 1},
+				{"key", bson.D{{"a", 1}}},
+				{"sparse", true},
+			},
+			label:      "sparse",
+			diffPieces: []string{"sparse"},
+		},
+	}
+
+	for _, curCase := range cases {
+		s.Run(
+			curCase.label,
+			func() {
+				a, err := bson.Marshal(curCase.a)
+				s.Require().NoError(err)
+
+				b, err := bson.Marshal(curCase.b)
+				s.Require().NoError(err)
+
+				diff, err := DescribeSpecDifferences(a, b)
+				s.Require().NoError(err)
+
+				s.Require().NotZero(diff)
+
+				for _, piece := range curCase.diffPieces {
+					s.Assert().Contains(diff.MustGet(), piece)
+				}
+			},
+		)
+	}
+}
+
 func (s *UnitTestSuite) TestIgnoreIndexFields() {
 	cases := []struct {
 		a, b  bson.D
@@ -68,10 +112,10 @@ func (s *UnitTestSuite) TestIgnoreIndexFields() {
 				b, err := bson.Marshal(curCase.b)
 				s.Require().NoError(err)
 
-				equal, err := AreSpecsEqual(a, b)
+				diff, err := DescribeSpecDifferences(a, b)
 				s.Require().NoError(err)
 
-				s.Assert().True(equal)
+				s.Assert().Zero(diff)
 			},
 		)
 	}
