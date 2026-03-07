@@ -92,7 +92,12 @@ func orderSensitivePartsMatch(specA, specB bson.Raw) (bool, error) {
 				continue
 			}
 
-			return false, fmt.Errorf("failed to look up %#q in spec A (%v): %w", optName, specA, err)
+			return false, fmt.Errorf(
+				"failed to look up %#q in spec A (%v): %w",
+				optName,
+				specA,
+				err,
+			)
 		}
 
 		optValueB, err = specB.LookupErr(optName)
@@ -101,7 +106,12 @@ func orderSensitivePartsMatch(specA, specB bson.Raw) (bool, error) {
 				continue
 			}
 
-			return false, fmt.Errorf("failed to look up %#q in spec B (%v): %w", optName, specB, err)
+			return false, fmt.Errorf(
+				"failed to look up %#q in spec B (%v): %w",
+				optName,
+				specB,
+				err,
+			)
 		}
 
 		if !optValueA.Equal(optValueB) {

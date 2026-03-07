@@ -44,7 +44,11 @@ func ModernizeSpec(indexSpec bson.Raw) (bson.Raw, bool, error) {
 
 	modernizedSpec, anythingWasModernized, err := getModernizedKeySpec(keySpec)
 	if err != nil {
-		return nil, false, fmt.Errorf("modernizing index’s key spec (index: %+v): %w", indexSpec, err)
+		return nil, false, fmt.Errorf(
+			"modernizing index’s key spec (index: %+v): %w",
+			indexSpec,
+			err,
+		)
 	}
 
 	if !anythingWasModernized {
@@ -52,7 +56,11 @@ func ModernizeSpec(indexSpec bson.Raw) (bson.Raw, bool, error) {
 	}
 	keySpec, err = bson.Marshal(modernizedSpec)
 	if err != nil {
-		return nil, false, fmt.Errorf("re-marshaling modernized key spec (%+v): %w", modernizedSpec, err)
+		return nil, false, fmt.Errorf(
+			"re-marshaling modernized key spec (%+v): %w",
+			modernizedSpec,
+			err,
+		)
 	}
 
 	var found bool
@@ -82,7 +90,12 @@ func getModernizedKeySpec(keySpec bson.Raw) (bson.D, bool, error) {
 
 		val, err := keyElem.ValueErr()
 		if err != nil {
-			return nil, false, fmt.Errorf("parsing key spec’s %#q (spec: %+v): %w", key, keySpec, err)
+			return nil, false, fmt.Errorf(
+				"parsing key spec’s %#q (spec: %+v): %w",
+				key,
+				keySpec,
+				err,
+			)
 		}
 
 		if shouldModernizeValue(val) {
