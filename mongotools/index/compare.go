@@ -176,7 +176,7 @@ func convertBitsSpecToInt32(spec bson.Raw) (bson.Raw, error) {
 // 32-bit signed integer range. This is because the server uses static_cast<int> in C++ to perform $toInt which can result
 // in undefined behavior on overflow whereas Go does well-defined truncation when converting to int32. For more details, see:
 // https://github.com/10gen/mongo/blob/84ff3493467477ffee5b92b663622c843d06fd9e/src/mongo/db/exec/expression/evaluate_math.cpp#L1158
-func convertToInt32(spec bson.Raw, keyName string, maxBound int) (bson.Raw, error) {
+func convertToInt32(spec bson.Raw, keyName string, maxBound int32) (bson.Raw, error) {
 	val, err := spec.LookupErr(keyName)
 	if err != nil {
 		if errors.Is(err, bsoncore.ErrElementNotFound) {
@@ -206,12 +206,22 @@ func convertToInt32(spec bson.Raw, keyName string, maxBound int) (bson.Raw, erro
 		)
 	}
 
+	i32, err := safecast.Convert[int32](val.AsFloat64())
+	if err != nil {
+		return nil, fmt.Errorf(
+			"%#q value (%v) must be expressible as int32",
+			keyName,
+			val,
+		)
+	}
+
 	newSpec, found, err := bsontools.ReplaceInRaw(
 		spec,
-		bsontools.ToRawValue(safecast.MustConvert[int32](val.AsFloat64())),
+		bsontools.ToRawValue(i32),
 		keyName,
 	)
 
+	// We shouldn’t be here if keyName isn’t in the spec.
 	lo.Assert(found, "must have found %#q", keyName)
 
 	return newSpec, err

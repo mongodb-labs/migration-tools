@@ -105,12 +105,11 @@ func iterateElements(els []bson.RawElement) error {
 		key := el.Key()
 		val := el.Value()
 
-		subdoc, err := RawValueTo[bson.Raw](val)
-		if err != nil {
-			return fmt.Errorf("getting %#q as subdoc: %w", key, err)
-		}
+		// Whether the value is a subdocument or an array, it’s a valid BSON
+		// document.
+		bsonBuf := val.Value
 
-		if err := sortInPlaceInternal(subdoc, bType == bson.TypeArray); err != nil {
+		if err := sortInPlaceInternal(bsonBuf, bType == bson.TypeArray); err != nil {
 			return fmt.Errorf("sorting subdoc %#q: %w", key, err)
 		}
 	}

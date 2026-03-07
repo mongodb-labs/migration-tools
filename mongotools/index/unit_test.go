@@ -2,6 +2,7 @@ package index
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"testing"
 
@@ -328,10 +329,16 @@ func (s *UnitTestSuite) TestConvertTTLSpecToInt32() {
 	s.Assert().Error(err, "should error when TTL is not a number")
 
 	spec = lo.Must(bson.Marshal(bson.D{
-		{"expireAfterSeconds", int64(2147483648)},
+		{"expireAfterSeconds", int64(1 + math.MaxInt32)},
 	}))
 	_, err = convertTTLSpecToInt32(spec)
 	s.Assert().Error(err, "should error when TTL is greater than math.MaxInt32")
+
+	spec = lo.Must(bson.Marshal(bson.D{
+		{"expireAfterSeconds", float64(math.MinInt32 - 1)},
+	}))
+	_, err = convertTTLSpecToInt32(spec)
+	s.Assert().Error(err, "should error when TTL is less than math.MinInt32")
 
 	spec = lo.Must(bson.Marshal(bson.D{{"unique", true}}))
 	spec, err = convertTTLSpecToInt32(spec)
