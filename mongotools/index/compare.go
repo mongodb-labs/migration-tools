@@ -2,7 +2,6 @@
 package index
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -13,7 +12,6 @@ import (
 	"github.com/mongodb-labs/migration-tools/bsontools"
 	"github.com/mongodb-labs/migration-tools/option"
 	"github.com/samber/lo"
-	"github.com/wI2L/jsondiff"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
@@ -60,55 +58,34 @@ func DescribeSpecDifferences(specA, specB bson.Raw) (option.Option[string], erro
 	}
 
 	if !equalNoOrder {
-		specAMap, err := toExtJSONMap(specA)
+		specAExtJSON, err := bson.MarshalExtJSON(specA, true, false)
 		if err != nil {
 			return option.Some(fmt.Sprintf(
-				"specs differ; failed to prepare spec A for diff (%v)",
+				"specs differ; failed to marshal spec A to ext JSON (%v)",
 				err,
 			)), nil
 		}
 
-		specBMap, err := toExtJSONMap(specB)
+		specBExtJSON, err := bson.MarshalExtJSON(specB, true, false)
 		if err != nil {
 			return option.Some(fmt.Sprintf(
-				"specs differ; failed to prepare spec B for diff (%v)",
+				"specs differ; failed to marshal spec B to ext JSON (%v)",
 				err,
 			)), nil
 		}
 
-		patch, err := jsondiff.Compare(
-			specAMap,
-			specBMap,
-			jsondiff.Factorize(),
-		)
+		description, err := describeJSONDiff(specAExtJSON, specBExtJSON)
 		if err != nil {
 			return option.Some(fmt.Sprintf(
 				"specs differ; failed to create ext JSON patch (%v)",
 				err,
 			)), nil
 		}
-		fmt.Printf("--- patch: %#q\n", patch)
 
-		return option.Some(patch.String()), nil
-		//return option.Some(string(patch)), nil
+		return option.Some(description), nil
 	}
 
 	return describeOrderSensitivePartsDiff(specA, specB)
-}
-
-func toExtJSONMap(doc bson.Raw) (bson.M, error) {
-	ejson, err := bson.MarshalExtJSON(doc, true, false)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling to ext json: %w", err)
-	}
-
-	var m bson.M
-	err = json.Unmarshal(ejson, &m)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshaling ext json (%s): %w", string(ejson), err)
-	}
-
-	return m, nil
 }
 
 func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
