@@ -5,81 +5,100 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/samber/lo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // SortFields sorts a BSON document’s fields recursively.
-func SortFields(in bson.Raw) (bson.Raw, error) {
+// It modifies the underlying byte slice of the provided bson.Raw directly.
+func SortFields(in bson.Raw) error {
+	return sortInPlaceInternal(in, false)
+}
+
+func sortInPlaceInternal(in bson.Raw, isArray bool) error {
 	els, err := in.Elements()
 	if err != nil {
-		return nil, fmt.Errorf("parsing fields: %w", err)
+		return fmt.Errorf("parsing fields: %w", err)
 	}
 
+	if len(els) == 0 {
+		return nil
+	}
+
+	// 1. Recursively sort nested documents and arrays IN PLACE.
+	err = iterateElements(els)
+	if err != nil {
+		return fmt.Errorf("iterating: %w", err)
+	}
+
+	// If this current document is an array, we DO NOT sort its keys
+	// (they are "0", "1", "2"), but we did need to sort its contents above.
+	if isArray {
+		return nil
+	}
+
+	// 2. Parse keys once to avoid O(N log N) re-parsing during the sort.
+	type parsedField struct {
+		key string
+		el  bson.RawElement
+	}
+
+	fields := make([]parsedField, 0, len(els))
+	for _, el := range els {
+		key := el.Key()
+		fields = append(fields, parsedField{
+			key: key,
+			el:  el, // Note: el bytes might have been mutated by the recursion above!
+		})
+	}
+
+	// 3. Sort the metadata based on the keys
+	slices.SortStableFunc(fields, func(a, b parsedField) int {
+		return cmp.Compare(a.key, b.key)
+	})
+
+	// 4. Safely rearrange the bytes.
+	// We calculate the exact size of the elements block (excluding the 4-byte
+	// document size header and the 1-byte null terminator).
+	elementsBlockSize := len(in) - 5
+	if elementsBlockSize <= 0 {
+		return nil
+	}
+
+	// We use a scratch buffer to hold the newly ordered bytes. This prevents
+	// variable-length elements from overwriting each other during the swap.
+	scratch := make([]byte, 0, elementsBlockSize)
+	for _, field := range fields {
+		scratch = append(scratch, field.el...)
+	}
+
+	// 5. Overwrite the original elements space with the sorted bytes.
+	copy(in[4:len(in)-1], scratch)
+
+	return nil
+}
+
+func iterateElements(els []bson.RawElement) error {
 	for _, el := range els {
 		bType := bson.Type(el[0])
 
-		switch bType {
-		case bson.TypeEmbeddedDocument:
-			key, err := el.KeyErr()
-			if err != nil {
-				return nil, fmt.Errorf("getting field name: %w", err)
-			}
+		if bType != bson.TypeEmbeddedDocument && bType != bson.TypeArray {
+			continue
+		}
 
-			val, err := el.ValueErr()
-			if err != nil {
-				return nil, fmt.Errorf("getting %#q’s value: %w", key, err)
-			}
+		// These can’t fail since Elements() validated already.
+		// NB: Since `val` is a sub-slice of `in`, modifying it modifies `in`.
+		key := el.Key()
+		val := el.Value()
 
-			subdoc, err := RawValueTo[bson.Raw](val)
-			if err != nil {
-				return nil, fmt.Errorf("getting %#q as subdoc: %w", key, err)
-			}
+		subdoc, err := RawValueTo[bson.Raw](val)
+		if err != nil {
+			return fmt.Errorf("getting %#q as subdoc: %w", key, err)
+		}
 
-			newSubdoc, err := SortFields(subdoc)
-			if err != nil {
-				return nil, fmt.Errorf("sorting subdoc %#q: %w", key, err)
-			}
-
-			copy(el[2+len(key):], newSubdoc)
-		case bson.TypeArray:
-			key, err := el.KeyErr()
-			if err != nil {
-				return nil, fmt.Errorf("getting field name: %w", err)
-			}
-
-			val, err := el.ValueErr()
-			if err != nil {
-				return nil, fmt.Errorf("getting %#q’s value: %w", key, err)
-			}
-
-			array, err := RawValueTo[bson.RawArray](val)
-			if err != nil {
-				return nil, fmt.Errorf("getting %#q as array: %w", key, err)
-			}
-
-			for 
+		if err := sortInPlaceInternal(subdoc, bType == bson.TypeArray); err != nil {
+			return fmt.Errorf("sorting subdoc %#q: %w", key, err)
 		}
 	}
 
-	newDoc := make(bson.Raw, 4, len(in))
-	copy(newDoc, in[:4])
-
-	slices.SortStableFunc(
-		els,
-		func(a, b bson.RawElement) int {
-			return cmp.Compare(
-				lo.Must(a.KeyErr()),
-				lo.Must(b.KeyErr()),
-			)
-		},
-	)
-
-	for _, el := range els {
-		newDoc = append(newDoc, el...)
-	}
-
-	newDoc = append(newDoc, 0)
-
-	return newDoc, nil
+	return nil
 }
