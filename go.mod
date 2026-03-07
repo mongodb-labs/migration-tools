@@ -14,6 +14,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/klauspost/compress v1.17.6 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect

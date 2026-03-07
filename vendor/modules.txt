@@ -7,6 +7,8 @@ github.com/davecgh/go-spew/spew
 # github.com/deckarep/golang-set/v2 v2.8.0
 ## explicit; go 1.18
 github.com/deckarep/golang-set/v2
+# github.com/evanphx/json-patch/v5 v5.9.11
+## explicit; go 1.18
 # github.com/klauspost/compress v1.17.6
 ## explicit; go 1.19
 github.com/klauspost/compress

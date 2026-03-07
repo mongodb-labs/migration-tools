@@ -2,6 +2,7 @@
 package index
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -34,8 +35,8 @@ var optsToIgnore = mapset.NewSet(
 	"background",
 )
 
-// AreSpecsEqual compares two index specifications and returns a boolean
-// that indicates whether they match. It:
+// DescribeSpecDifferences compares two index specifications and returns a
+// human-readable description of the mismatch. It:
 // 1) normalizes legacy index specifications
 // 2) omits the version field
 // 3) correctly considers or ignores field order as appropriate.
@@ -59,28 +60,26 @@ func DescribeSpecDifferences(specA, specB bson.Raw) (option.Option[string], erro
 	}
 
 	if !equalNoOrder {
-		specAExtJSON, err := bson.MarshalExtJSON(specA, true, false)
+		specAMap, err := toExtJSONMap(specA)
 		if err != nil {
 			return option.Some(fmt.Sprintf(
-				"specs differ; failed to marshal spec A to ext JSON (%v)",
+				"specs differ; failed to prepare spec A for diff (%v)",
 				err,
 			)), nil
 		}
-		fmt.Printf("---- ejson: %#q\n\n", specAExtJSON)
 
-		specBExtJSON, err := bson.MarshalExtJSON(specB, true, false)
+		specBMap, err := toExtJSONMap(specB)
 		if err != nil {
 			return option.Some(fmt.Sprintf(
-				"specs differ; failed to marshal spec B to ext JSON (%v)",
+				"specs differ; failed to prepare spec B for diff (%v)",
 				err,
 			)), nil
 		}
 
 		patch, err := jsondiff.Compare(
-			specAExtJSON,
-			specBExtJSON,
+			specAMap,
+			specBMap,
 			jsondiff.Factorize(),
-			jsondiff.Rationalize(),
 		)
 		if err != nil {
 			return option.Some(fmt.Sprintf(
@@ -88,11 +87,28 @@ func DescribeSpecDifferences(specA, specB bson.Raw) (option.Option[string], erro
 				err,
 			)), nil
 		}
+		fmt.Printf("--- patch: %#q\n", patch)
 
 		return option.Some(patch.String()), nil
+		//return option.Some(string(patch)), nil
 	}
 
 	return describeOrderSensitivePartsDiff(specA, specB)
+}
+
+func toExtJSONMap(doc bson.Raw) (bson.M, error) {
+	ejson, err := bson.MarshalExtJSON(doc, true, false)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling to ext json: %w", err)
+	}
+
+	var m bson.M
+	err = json.Unmarshal(ejson, &m)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshaling ext json (%s): %w", string(ejson), err)
+	}
+
+	return m, nil
 }
 
 func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
