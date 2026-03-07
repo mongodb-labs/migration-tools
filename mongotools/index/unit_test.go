@@ -77,6 +77,7 @@ func (s *UnitTestSuite) TestIgnoreIndexFields() {
 	}
 }
 
+//nolint:funlen
 func (s *UnitTestSuite) Test_ConvertLegacyIndexKeys() {
 	type testCase struct {
 		name                string
