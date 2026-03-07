@@ -28,7 +28,7 @@ var optsWhereOrderIsSignificant = mapset.NewSet(
 // that indicates whether they match. It:
 // 1) normalizes legacy index specifications
 // 2) omits the version field
-// 2) correctly considers or ignores field order as appropriate.
+// 3) correctly considers or ignores field order as appropriate.
 func AreSpecsEqual(specA, specB bson.Raw) (bool, error) {
 	specA = slices.Clone(specA)
 	specB = slices.Clone(specB)
