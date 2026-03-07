@@ -61,6 +61,18 @@ func (s *UnitTestSuite) TestDescribeDiffs() {
 		{
 			a: bson.D{
 				{"v", 2},
+				{"key", bson.D{{"b", 1}}},
+			},
+			b: bson.D{
+				{"v", 1},
+				{"key", bson.D{{"bb", 1}}},
+			},
+			label:      "different keys",
+			diffPieces: []string{`/key/b"`, `/key/bb"`},
+		},
+		{
+			a: bson.D{
+				{"v", 2},
 				{"key", bson.D{{"a", 1}, {"b", 1}}},
 			},
 			b: bson.D{

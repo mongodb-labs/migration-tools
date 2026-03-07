@@ -111,7 +111,7 @@ func DescribeSpecDifferences(specA, specB bson.Raw) (option.Option[SpecDiff], er
 		patch, err := jsondiff.CompareJSON(
 			specAExtJSON,
 			specBExtJSON,
-			jsondiff.Factorize(),
+			// jsondiff.Factorize(), // https://github.com/wI2L/jsondiff/issues/45
 		)
 
 		return option.Some(SpecDiff{
