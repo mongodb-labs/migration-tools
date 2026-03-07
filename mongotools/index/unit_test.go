@@ -75,7 +75,7 @@ func (s *UnitTestSuite) TestDescribeDiffs() {
 				s.Require().NotZero(diff)
 
 				for _, piece := range curCase.diffPieces {
-					s.Assert().Contains(diff.MustGet(), piece)
+					s.Assert().Contains(diff.MustGet().String(), piece)
 				}
 			},
 		)
