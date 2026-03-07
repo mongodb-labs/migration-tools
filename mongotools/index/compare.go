@@ -15,7 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
-// Index options that should be checked without ignoring the order of fields.
+// These index options must be compared with sensitivity to field order.
 var optsWhereOrderIsSignificant = mapset.NewSet(
 	"key",
 
