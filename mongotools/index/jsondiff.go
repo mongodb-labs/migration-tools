@@ -1,8 +1,11 @@
 package index
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/wI2L/jsondiff"
 )
@@ -38,10 +41,34 @@ func fixJSONPatchFieldOrder(in []byte) ([]byte, error) {
 		Value *any    `json:"value,omitempty"`
 	}{}
 
-	err := json.Unmarshal(in, &patchOrderStruct)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal JSON for reordering: %w", err)
-	}
+	decoder := json.NewDecoder(bytes.NewBuffer(in))
+	var out []byte
 
-	return json.Marshal(patchOrderStruct)
+	for {
+		toZero(&patchOrderStruct)
+
+		err := decoder.Decode(&patchOrderStruct)
+
+		switch {
+		case err == nil:
+			if len(out) > 0 {
+				out = append(out, '\n')
+			}
+
+			cur, err := json.Marshal(patchOrderStruct)
+			if err != nil {
+				return nil, fmt.Errorf("marshaling operation: %w", err)
+			}
+
+			out = append(out, cur...)
+		case errors.Is(err, io.EOF):
+			return out, nil
+		default:
+			return nil, fmt.Errorf("unmarshaling JSON patch operation: %w", err)
+		}
+	}
+}
+
+func toZero[T any](v *T) {
+	*v = *new(T)
 }

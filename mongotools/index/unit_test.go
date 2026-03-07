@@ -48,6 +48,19 @@ func (s *UnitTestSuite) TestDescribeDiffs() {
 		{
 			a: bson.D{
 				{"v", 2},
+				{"key", bson.D{{"aaa", 1}}},
+			},
+			b: bson.D{
+				{"v", 1},
+				{"key", bson.D{{"bbb", 1}}},
+				{"sparse", true},
+			},
+			label:      "different keys, multiple diffs",
+			diffPieces: []string{"aaa", "bbb", "sparse"},
+		},
+		{
+			a: bson.D{
+				{"v", 2},
 				{"key", bson.D{{"a", 1}, {"b", 1}}},
 			},
 			b: bson.D{
@@ -73,6 +86,8 @@ func (s *UnitTestSuite) TestDescribeDiffs() {
 				s.Require().NoError(err)
 
 				s.Require().NotZero(diff)
+
+				s.T().Logf("diff: %#q", diff.MustGet().String())
 
 				for _, piece := range curCase.diffPieces {
 					s.Assert().Contains(diff.MustGet().String(), piece)
