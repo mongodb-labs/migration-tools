@@ -33,6 +33,22 @@ func TestRawLookup(t *testing.T) {
 	assert.ErrorContains(t, err, "string")
 }
 
+func TestRawElements_Empty(t *testing.T) {
+	var doc bson.Raw
+
+	for _, err := range RawElements(doc) {
+		require.NoError(t, err)
+		require.Fail(t, "should have no elements")
+	}
+
+	doc = bson.Raw{}
+
+	for _, err := range RawElements(doc) {
+		require.NoError(t, err)
+		require.Fail(t, "should have no elements")
+	}
+}
+
 func TestRawElements(t *testing.T) {
 	srcD := bson.D{
 		{"foo", "xxx"},

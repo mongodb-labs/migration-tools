@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"iter"
 
+	"github.com/samber/lo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
@@ -48,7 +49,7 @@ func CountRawElements[D ~[]byte](doc D) (int, error) {
 // If the iterator returns an error but the caller continues iterating,
 // a panic will ensue.
 func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
-	remaining := doc[4:]
+	remaining := lo.Slice(doc, 4, len(doc))
 
 	return func(yield func(bson.RawElement, error) bool) {
 		var el bsoncore.Element
