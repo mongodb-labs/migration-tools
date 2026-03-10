@@ -49,6 +49,14 @@ func TestRawElements_Empty(t *testing.T) {
 	}
 }
 
+func TestRawElements_ShortHeader(t *testing.T) {
+	doc := bson.Raw{0, 1, 2}
+
+	for _, err := range RawElements(doc) {
+		require.Error(t, err)
+	}
+}
+
 func TestRawElements(t *testing.T) {
 	srcD := bson.D{
 		{"foo", "xxx"},

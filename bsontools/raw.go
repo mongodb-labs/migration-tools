@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"iter"
 
-	"github.com/samber/lo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
@@ -49,7 +48,17 @@ func CountRawElements[D ~[]byte](doc D) (int, error) {
 // If the iterator returns an error but the caller continues iterating,
 // a panic will ensue.
 func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
-	remaining := lo.Slice(doc, 4, len(doc))
+	if len(doc) == 0 {
+		return func(func(bson.RawElement, error) bool) {}
+	}
+
+	if len(doc) < 4 {
+		return func(yield func(bson.RawElement, error) bool) {
+			yield(nil, fmt.Errorf("buffer is only %d bytes long", len(doc)))
+		}
+	}
+
+	remaining := doc[4:]
 
 	return func(yield func(bson.RawElement, error) bool) {
 		var el bsoncore.Element
