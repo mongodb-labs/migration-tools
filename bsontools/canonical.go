@@ -1,7 +1,6 @@
 package bsontools
 
 import (
-	"bytes"
 	"cmp"
 	"fmt"
 	"slices"
@@ -13,20 +12,6 @@ import (
 // It modifies the provided bson.Raw directly.
 func SortFields(in bson.Raw) error {
 	return sortInPlaceInternal(in, false)
-}
-
-func EqualIgnoringOrder(a, b bson.Raw) (bool, error) {
-	sortedA := slices.Clone(a)
-	if err := SortFields(sortedA); err != nil {
-		return false, fmt.Errorf("sorting A’s fields: %w", err)
-	}
-
-	sortedB := slices.Clone(b)
-	if err := SortFields(sortedB); err != nil {
-		return false, fmt.Errorf("sorting B’s fields: %w", err)
-	}
-
-	return bytes.Equal(sortedA, sortedB), nil
 }
 
 func sortInPlaceInternal(in bson.Raw, isArray bool) error {

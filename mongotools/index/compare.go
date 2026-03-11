@@ -88,7 +88,7 @@ func DescribeSpecDifferences(specA, specB bson.Raw) (option.Option[SpecDiff], er
 		return option.None[SpecDiff](), err
 	}
 
-	equalNoOrder, err := bsontools.EqualIgnoringOrder(specA, specB)
+	equalNoOrder, err := equalIgnoringOrder(specA, specB)
 	if err != nil {
 		return option.None[SpecDiff](), err
 	}
