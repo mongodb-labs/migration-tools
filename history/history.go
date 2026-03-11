@@ -101,3 +101,22 @@ func SumLogs[T realNumber](l []Log[T]) T {
 
 	return sum
 }
+
+// RatePer computes a rate per unit duration.
+//
+// Example:
+//
+//	requestsHistory := history.New[int](time.Minute)
+//
+//	// .. add some logs ..
+//
+//	requestsPerSecond := history.RatePer(requestsHistory.Get(), time.Second)
+func RatePer[T realNumber](logs []Log[T], dur time.Duration) float64 {
+	if len(logs) == 0 {
+		return 0
+	}
+
+	denom := float64(time.Since(logs[0].At)) / float64(dur)
+
+	return float64(SumLogs(logs)) / denom
+}
