@@ -1,4 +1,6 @@
-// Package history exposes a lightweight tool for tracking historical events.
+// Package history exposes a time-bounded queue. It’s ideal for tracking
+// historical events that “expire” after a certain time.
+//
 // A typical use would be to compute rates, e.g.:
 //
 //	writesHistory := history.New[int](time.Minute)
