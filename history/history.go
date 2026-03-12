@@ -7,7 +7,7 @@
 //	writesHistory.Add(234)
 //
 //	logs := writesHistory.Get()
-//	perSecond := float64(SumLogs(logs)) / time.Since(logs[0].At).Seconds()
+//	perSecond := history.RatePer(logs, time.Second)
 package history
 
 import (
