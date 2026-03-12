@@ -167,7 +167,7 @@ func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
 	return spec, nil
 }
 
-// This assumes the specs are pre-prepared as above.
+// This assumes the specs have been through prepareIndexSpecForEqualityCheck.
 func getOrderDifferOpts(specA, specB bson.Raw) ([]string, error) {
 	var orderDifferOpts []string
 
