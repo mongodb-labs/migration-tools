@@ -27,6 +27,12 @@ var optsWhereOrderMatters = []string{
 }
 
 var optsToIgnore = mapset.NewSet(
+	// We can ignore the `v` field when comparing indexes. This is because:
+	// - We already validated that the version is v1 or v2.
+	// - There are no backwards-incompatible features between v1 & v2 indexes.
+	//   (v2 indexes only added `NumberDecimal` and `Collation`.)
+	"v",
+
 	// v4.4 stopped adding “ns” to index fields.
 	"ns",
 
@@ -146,15 +152,6 @@ func prepareIndexSpecForEqualityCheck(spec bson.Raw) (bson.Raw, error) {
 	spec, err = normalizeTypesInSpec(spec)
 	if err != nil {
 		return nil, fmt.Errorf("normalizing types: %w", err)
-	}
-
-	// We can ignore the `v` field when comparing indexes. This is because:
-	// - We already validated that the version is v1 or v2.
-	// - There are no backwards-incompatible features between v1 & v2 indexes.
-	//   (v2 indexes only added `NumberDecimal` and `Collation`.)
-	spec, err = omitVersionFromIndexSpec(spec)
-	if err != nil {
-		return nil, err
 	}
 
 	for field := range optsToIgnore.Iter() {
