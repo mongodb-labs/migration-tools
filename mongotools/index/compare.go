@@ -290,9 +290,9 @@ func convertToInt32(spec bson.Raw, keyName string, maxBound int32) (bson.Raw, er
 	case bson.TypeInt64, bson.TypeDouble:
 		if val.AsFloat64() > float64(maxBound) {
 			return nil, fmt.Errorf(
-				"%#q value (%d) cannot exceed %d",
+				"%#q value (%f) cannot exceed %d",
 				keyName,
-				val.Int64(),
+				val.AsFloat64(),
 				maxBound,
 			)
 		}
