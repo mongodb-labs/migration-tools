@@ -52,9 +52,13 @@ func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
 		return func(func(bson.RawElement, error) bool) {}
 	}
 
-	if len(doc) < 4 {
+	if _, rem, ok := bsoncore.ReadLength(doc); !ok {
 		return func(yield func(bson.RawElement, error) bool) {
-			yield(nil, fmt.Errorf("buffer is only %d bytes long", len(doc)))
+			yield(nil, fmt.Errorf(
+				"%w (buffer is only %d bytes long)",
+				bsoncore.NewInsufficientBytesError(doc, rem),
+				len(doc),
+			))
 		}
 	}
 
