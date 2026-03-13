@@ -1,5 +1,8 @@
-// Package history exposes a lightweight tool for tracking historical events.
-// A typical use would be to compute rates, e.g.:
+// Package history exposes a time-bounded queue. It’s ideal for tracking
+// historical events that “expire” after a certain time.
+//
+// A typical use would be to compute rates. The following, for example,
+// computes a per-second average over 1 minute:
 //
 //	writesHistory := history.New[int](time.Minute)
 //
@@ -7,7 +10,7 @@
 //	writesHistory.Add(234)
 //
 //	logs := writesHistory.Get()
-//	perSecond := float64(SumLogs(logs)) / time.Since(logs[0].At).Seconds()
+//	perSecond := history.RatePer(logs, time.Second)
 package history
 
 import (
@@ -100,4 +103,17 @@ func SumLogs[T realNumber](l []Log[T]) T {
 	}
 
 	return sum
+}
+
+// RatePer computes a rate per unit duration. For example, if you pass
+// time.Second as the duration, the return will be the logs’ per-second
+// average.
+func RatePer[T realNumber](logs []Log[T], dur time.Duration) float64 {
+	if len(logs) == 0 {
+		return 0
+	}
+
+	denom := float64(time.Since(logs[0].At)) / float64(dur)
+
+	return float64(SumLogs(logs)) / denom
 }

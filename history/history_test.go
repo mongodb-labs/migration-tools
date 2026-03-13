@@ -3,6 +3,7 @@ package history
 import (
 	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -60,4 +61,28 @@ func splitLogs[T any](in []Log[T]) ([]time.Time, []T) {
 	}
 
 	return times, data
+}
+
+func TestRatePer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		history := New[int64](time.Minute)
+
+		history.Add(123)
+
+		time.Sleep(time.Second)
+
+		perSec := RatePer(history.Get(), time.Second)
+		assert.EqualValues(t, 123, perSec)
+
+		perMin := RatePer(history.Get(), time.Minute)
+		assert.EqualValues(t, 123*60, perMin)
+
+		history.Add(123)
+
+		perSec = RatePer(history.Get(), time.Second)
+		assert.EqualValues(t, 246, perSec)
+
+		perMin = RatePer(history.Get(), time.Minute)
+		assert.EqualValues(t, 246*60, perMin)
+	})
 }
