@@ -11,6 +11,10 @@ import (
 // NB: This is not suited for general use because use of DeepEqual means that
 // NaN values will never match, even if their underlying binary representation
 // does actually match.
+//
+// This method, rather than sorting the BSON documents’ fields, is used for
+// parity with preexisting index-comparison logic. It assumes that DeepEqual
+// is “close enough” to an order-agnostic BSON comparison for our needs.
 func equalIgnoringOrder(a, b bson.Raw) (bool, error) {
 	decoderA := bson.NewDecoder(bson.NewDocumentReader(bytes.NewReader(a)))
 	decoderA.DefaultDocumentMap()
