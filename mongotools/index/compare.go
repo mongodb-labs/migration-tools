@@ -232,7 +232,13 @@ func normalizeKeyEl(spec bson.Raw, el bson.RawElement) (bson.Raw, error) {
 	var found bool
 	spec, found, err = bsontools.ReplaceInRaw(spec, bsontools.ToRawValue(i32), "key", fieldName)
 	if err != nil {
-		return nil, fmt.Errorf("replacing %#q (%s) with %s: %w", fieldName, elType, bson.TypeInt32, err)
+		return nil, fmt.Errorf(
+			"replacing %#q (%s) with %s: %w",
+			fieldName,
+			elType,
+			bson.TypeInt32,
+			err,
+		)
 	}
 
 	lo.Assertf(found, "must have found field %#q", fieldName)
