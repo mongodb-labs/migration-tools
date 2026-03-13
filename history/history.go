@@ -1,7 +1,8 @@
 // Package history exposes a time-bounded queue. It’s ideal for tracking
 // historical events that “expire” after a certain time.
 //
-// A typical use would be to compute rates, e.g.:
+// A typical use would be to compute rates. The following, for example,
+// computes a per-second average over 1 minute:
 //
 //	writesHistory := history.New[int](time.Minute)
 //
