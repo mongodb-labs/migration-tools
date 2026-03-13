@@ -220,7 +220,8 @@ func normalizeKeyEl(spec bson.Raw, el bson.RawElement) (bson.Raw, error) {
 		}
 
 		if float64(i32) != val.Double() {
-			return nil, fmt.Errorf("%#q (float64 %f) isn’t an integer", el.Key(), val.Double())
+			// We can’t normalize this, so just let it be.
+			return spec, nil
 		}
 
 	default:
