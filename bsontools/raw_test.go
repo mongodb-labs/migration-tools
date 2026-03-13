@@ -54,6 +54,7 @@ func TestRawElements_ShortHeader(t *testing.T) {
 
 	for _, err := range RawElements(doc) {
 		require.Error(t, err)
+		assert.ErrorAs(t, err, &bsoncore.InsufficientBytesError{})
 	}
 }
 
