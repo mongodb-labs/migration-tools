@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/samber/lo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -70,6 +71,14 @@ func sortInPlaceInternal(in bson.Raw, isArray bool) error {
 	for _, field := range fields {
 		scratch = append(scratch, field.el...)
 	}
+
+	// sanity-check that `scratch` is, in fact, the expected size:
+	lo.Assertf(
+		len(scratch) == elementsBlockSize,
+		"scratch (%d bytes) should be %d bytes",
+		len(scratch),
+		elementsBlockSize,
+	)
 
 	// 5. Overwrite the original elements space with the sorted bytes.
 	copy(in[4:len(in)-1], scratch)
