@@ -6,7 +6,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/mongodb-labs/migration-tools/option"
-	"github.com/mongodb-labs/migration-tools/testtools"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -167,14 +166,11 @@ func TestVerifierCompareIndexSpecs(t *testing.T) {
 			assert.Zero(t, diffOpt, "specs should match")
 		} else {
 			if assert.NotZero(t, diffOpt, "specs should mismatch") {
-				got, err := testtools.CloneExported(diffOpt.MustGet())
-				require.NoError(t, err)
-
 				assert.Empty(
 					t,
 					cmp.Diff(
 						curCase.expectedDiff.MustGet(),
-						got,
+						diffOpt.MustGet(),
 						cmpopts.IgnoreUnexported(jsondiff.Operation{}),
 						cmpopts.IgnoreUnexported(SpecDiff{}),
 					),
