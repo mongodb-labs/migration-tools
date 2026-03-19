@@ -7,7 +7,11 @@ import "sync"
 // accesses it does so in a race-safe way.
 //
 // DataGuard is safer than using RWMutex directly for guarding single fields
-// or structs. In more complex cases, it may cause unnecessary complications.
+// or structs because it “guards” against forgetting to free the lock. It’s
+// also often better than atomic controls because it helps prevent changes to
+// the value while you’re using it.
+//
+// In more complex cases, though, it may cause unnecessary complications.
 // Use your judgment, and get feedback from coworkers if needed.
 //
 // &DataGuard[T]{} is usable. See NewDataGuard to initialize a DataGuard with
