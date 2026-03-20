@@ -6,13 +6,15 @@ import "sync"
 // DataGuard encapsulates a value with a mutex to ensure that anything that
 // accesses it does so in a race-safe way.
 //
-// DataGuard is safer than using RWMutex directly for guarding single fields
-// or structs because it “guards” against forgetting to free the lock. It’s
-// also often better than atomic controls because it helps prevent changes to
-// the value while you’re using it.
+// DataGuard can be used in many instances where otherwise you’d use a
+// sync.Mutex or RWMutex to synchronize access to a value. DataGuard confers
+// these benefits:
+// - It prevents access to the value without the mutex.
+// - It prevents folks from forgetting to unlock the mutex.
+// - It (arguably) clarifies the scope over which the value is locked.
 //
-// In more complex cases, though, it may cause unnecessary complications.
-// Use your judgment, and get feedback from coworkers if needed.
+// Note that, in some more complex cases, though, a simple mutex may still
+// work better. Use your judgement, and get feedback from coworkers if needed.
 //
 // &DataGuard[T]{} is usable. See NewDataGuard to initialize a DataGuard with
 // a specific value.
@@ -36,10 +38,9 @@ func (l *DataGuard[T]) Load(cb func(T)) {
 	cb(l.value)
 }
 
-// GetValue is like Load, but returns the value directly. This is useful if
-// you just need the current value and do not care if it changes after you
-// retrieve it.
-func (l *DataGuard[T]) GetValue() T {
+// CopyValue is like Load, but returns a copy of the value directly. This is
+// useful if you can tolerate your copy going “stale”.
+func (l *DataGuard[T]) CopyValue() T {
 	l.mutex.RLock()
 	defer l.mutex.RUnlock()
 

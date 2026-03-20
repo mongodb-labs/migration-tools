@@ -47,5 +47,5 @@ func (s *unitTestSuite) TestDataGuard() {
 		s.Require().Equal(92, v)
 	})
 
-	s.Require().Equal(92, l.GetValue())
+	s.Require().Equal(92, l.CopyValue())
 }
