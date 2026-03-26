@@ -3,8 +3,10 @@ package humantools
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
+	"github.com/ccoveille/go-safecast/v2"
 	"github.com/dustin/go-humanize"
 	"golang.org/x/exp/constraints"
 )
@@ -160,8 +162,35 @@ func BytesToUnit[T num16Plus](count T, unit DataUnit, precision uint) string {
 	return FmtReal(float64(count)/float64(myUnitSize), precision)
 }
 
+// FmtPercent returns a stringified percentage without a trailing `%`,
+// formatted as per FmtFloat(). FmtPercent also ensures that any
+// percentage less than 100% is reported as something less; e.g.,
+// 99.999997 doesn’t get rounded up to 100.
+func FmtPercent[T, U realNum](numerator T, denominator U, precision uint) string {
+	str := fmtQuotient(100*numerator, denominator, precision)
+
+	// If the numerator & denominator are large then it’s possible
+	// for str to be “100” without the numbers actually being equal.
+	// For our purposes, though, “100” percent should mean the
+	// denominator cannot exceed the numerator.
+	//
+	// (For now it’s ok to return “100” if the numerator exceeds the
+	// denominator.)
+	if str == "100" && (U(numerator) != denominator) {
+		if U(numerator) < denominator {
+			return "99." + strings.Repeat("9", safecast.MustConvert[int](precision))
+		}
+	}
+
+	return str
+}
+
 func fmtFloat[T realNum](num T, precision uint) string {
 	return humanize.Commaf(roundFloat(float64(num), precision))
+}
+
+func fmtQuotient[T, U realNum](dividend T, divisor U, precision uint) string {
+	return FmtReal(float64(dividend)/float64(divisor), precision)
 }
 
 func roundFloat(val float64, precision uint) float64 {
