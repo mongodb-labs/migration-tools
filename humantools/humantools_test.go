@@ -45,6 +45,24 @@ func TestDurationToDHMS(t *testing.T) {
 		dhms := DurationToDHMS(dur)
 		assert.Equal(t, tt.dhms, dhms, "%dms -> %s", tt.millis, tt.dhms)
 	}
+
+	negativeTests := []struct {
+		millis int
+		dhms   string
+	}{
+		{-1000, "-1s"},
+		{-1500, "-1.5s"},
+		{-90500, "-1m 30.5s"},
+		{-86399500, "-23h 59m 59.5s"},
+		{-86400000, "-1d 0h 0m 0s"},
+		{-(86400000 + 3661500), "-1d 1h 1m 1.5s"},
+	}
+
+	for _, tt := range negativeTests {
+		dur := time.Duration(tt.millis) * time.Millisecond
+		dhms := DurationToDHMS(dur)
+		assert.Equal(t, tt.dhms, dhms, "%dms -> %s", tt.millis, tt.dhms)
+	}
 }
 
 func TestFmtPercent(t *testing.T) {

@@ -77,7 +77,12 @@ func FmtBytes[T num16Plus](count T, precision uint) string {
 // the nearest hundredth of a second. For durations >= 24h, days are
 // shown instead of unbounded hours, e.g., "2d 3h 22m 3.23s"; in that
 // case hours, minutes, and seconds are always included even if zero.
+// Negative durations are formatted with a leading "-".
 func DurationToDHMS(duration time.Duration) string {
+	if duration < 0 {
+		return "-" + DurationToDHMS(-duration)
+	}
+
 	days := int(math.Floor(duration.Hours() / 24))
 	hours := int(math.Floor(duration.Hours())) % 24
 	minutes := int(math.Floor(duration.Minutes())) % 60
