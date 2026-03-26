@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ccoveille/go-safecast/v2"
 	"github.com/dustin/go-humanize"
 	"github.com/samber/lo"
 	"golang.org/x/exp/constraints"
@@ -167,30 +166,22 @@ func BytesToUnit[T num16Plus](count T, unit DataUnit, precision uint) string {
 func FmtPercent[T, U realNum](numerator T, denominator U, precision uint) string {
 	lo.Assert(denominator != 0, "denominator must be nonzero")
 
-	str := fmtQuotient(100*numerator, denominator, precision)
+	ratio := 100 * float64(numerator) / float64(denominator)
 
-	// If the numerator & denominator are large then it’s possible
-	// for str to be “100” without the numbers actually being equal.
-	// For our purposes, though, “100” percent should mean the
-	// denominator cannot exceed the numerator.
-	//
-	// (For now it’s ok to return “100” if the numerator exceeds the
-	// denominator.)
-	if str == "100" && (U(numerator) != denominator) {
-		if U(numerator) < denominator {
-			return "99." + strings.Repeat("9", safecast.MustConvert[int](precision))
+	if ratio < 100 {
+		// Round, but clamp so we never return exactly “100”.
+		rounded := roundFloat(ratio, precision)
+		if rounded >= 100 {
+			return "99." + strings.Repeat("9", int(precision))
 		}
+		return FmtReal(rounded, precision)
 	}
 
-	return str
+	return FmtReal(ratio, precision)
 }
 
 func fmtFloat[T realNum](num T, precision uint) string {
 	return humanize.Commaf(roundFloat(float64(num), precision))
-}
-
-func fmtQuotient[T, U realNum](dividend T, divisor U, precision uint) string {
-	return FmtReal(float64(dividend)/float64(divisor), precision)
 }
 
 func roundFloat(val float64, precision uint) float64 {

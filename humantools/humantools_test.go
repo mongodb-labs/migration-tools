@@ -35,6 +35,8 @@ func TestDurationToHMS(t *testing.T) {
 		dur time.Duration
 		hms string
 	}{
+		{0, "0s"},
+		{time.Duration(500) * time.Millisecond, "0.5s"},
 		{time.Duration(1234) * time.Millisecond, "1.23s"},
 	}
 
