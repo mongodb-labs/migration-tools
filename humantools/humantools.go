@@ -8,6 +8,7 @@ import (
 
 	"github.com/ccoveille/go-safecast/v2"
 	"github.com/dustin/go-humanize"
+	"github.com/samber/lo"
 	"golang.org/x/exp/constraints"
 )
 
@@ -76,7 +77,6 @@ func FmtBytes[T num16Plus](count T, precision uint) string {
 // the lowest unit shown is always the second, and this rounds to
 // the nearest hundredth of a second.
 func DurationToHMS(duration time.Duration) string {
-
 	hours := int(math.Floor(duration.Hours()))
 	minutes := int(math.Floor(duration.Minutes())) % 60
 
@@ -98,7 +98,6 @@ func DurationToHMS(duration time.Duration) string {
 // You can then give that DataUnit to BytesToUnit() to stringify
 // multiple byte counts to the same unit.
 func FindBestUnit[T num16Plus](count T) DataUnit {
-
 	// humanize.IBytes() does most of what we want but lacks the
 	// flexibility to specify a precision. It’s not complicated to
 	// implement here anyway.
@@ -137,9 +136,8 @@ func FindBestUnit[T num16Plus](count T) DataUnit {
 
 // BytesToUnit returns a stringified number that represents `count`
 // in the given `unit`. For example, count=1024 and unit=KiB would
-// return "1"., p
+// return "1".
 func BytesToUnit[T num16Plus](count T, unit DataUnit, precision uint) string {
-
 	// Ideally go-humanize could do this for us,
 	// but as of this writing it can’t.
 	// https://github.com/dustin/go-humanize/issues/111
@@ -167,6 +165,8 @@ func BytesToUnit[T num16Plus](count T, unit DataUnit, precision uint) string {
 // percentage less than 100% is reported as something less; e.g.,
 // 99.999997 doesn’t get rounded up to 100.
 func FmtPercent[T, U realNum](numerator T, denominator U, precision uint) string {
+	lo.Assert(denominator != 0, "denominator must be nonzero")
+
 	str := fmtQuotient(100*numerator, denominator, precision)
 
 	// If the numerator & denominator are large then it’s possible

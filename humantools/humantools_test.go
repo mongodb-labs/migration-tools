@@ -6,21 +6,12 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
 )
 
 const precision = 2
 
-type UnitTestSuite struct {
-	suite.Suite
-}
-
-func TestUnitTestSuite(t *testing.T) {
-	ts := new(UnitTestSuite)
-	suite.Run(t, ts)
-}
-
-func (s *UnitTestSuite) TestDurationToHMS() {
+func TestDurationToHMS(t *testing.T) {
 	secTests := []struct {
 		secs uint
 		hms  string
@@ -37,7 +28,7 @@ func (s *UnitTestSuite) TestDurationToHMS() {
 
 	for _, tt := range secTests {
 		hms := DurationToHMS(time.Duration(tt.secs) * time.Second)
-		s.Assert().Equalf(tt.hms, hms, "%.02f secs -> “%s”", tt.secs, tt.hms)
+		assert.Equal(t, tt.hms, hms, "%.02f secs -> “%s”", tt.secs, tt.hms)
 	}
 
 	durationTests := []struct {
@@ -49,38 +40,42 @@ func (s *UnitTestSuite) TestDurationToHMS() {
 
 	for _, tt := range durationTests {
 		hms := DurationToHMS(tt.dur)
-		s.Assert().Equalf(tt.hms, hms, "%s -> “%s”", tt.dur, tt.hms)
+		assert.Equal(t, tt.hms, hms, "%s -> “%s”", tt.dur, tt.hms)
 	}
 }
 
-func (s *UnitTestSuite) TestFmtPercent() {
-	s.Assert().Equal(
+func TestFmtPercent(t *testing.T) {
+	assert.Equal(
+		t,
 		"23.45",
 		FmtPercent(uint(2_345_111), uint(10_000_000), precision),
 		"numeric precision is as expected (uint)",
 	)
 
-	s.Assert().Equal(
+	assert.Equal(
+		t,
 		"23.45",
 		FmtPercent(int(2_345_111), uint(10_000_000), precision),
 		"numeric precision is as expected (int / uint)",
 	)
 
-	s.Assert().Equal(
+	assert.Equal(
+		t,
 		"23.45",
 		FmtPercent(float64(2_345_111), uint(10_000_000), precision),
 		"numeric precision is as expected (float64 / uint)",
 	)
 
 	bigNum := uint(99999999999999)
-	s.Assert().NotEqualf(
+	assert.NotEqual(
+		t,
 		"100",
 		FmtPercent(bigNum, 1+bigNum, precision),
 		"No false “100 percent” should happen",
 	)
 }
 
-func (s *UnitTestSuite) TestBytesToUnit() {
+func TestBytesToUnit(t *testing.T) {
 	tests := []struct {
 		bytes  uint64
 		unit   DataUnit
@@ -97,14 +92,15 @@ func (s *UnitTestSuite) TestBytesToUnit() {
 
 	for _, tt := range tests {
 		output := BytesToUnit(tt.bytes, tt.unit, precision)
-		s.Assert().Equalf(
+		assert.Equal(
+			t,
 			tt.output, output,
 			"%d bytes as %s", tt.bytes, tt.unit,
 		)
 	}
 }
 
-func (s *UnitTestSuite) TestByteConversion() {
+func TestByteConversion(t *testing.T) {
 	tests := []struct {
 		bytes uint64
 		unit  DataUnit
@@ -114,13 +110,13 @@ func (s *UnitTestSuite) TestByteConversion() {
 		{1234567, MiB},
 		{1204, KiB},
 
-		// go-humanize supports Exibytes; we might as well ensure
+		// go-humanize supports Exbibytes; we might as well ensure
 		// good behavior if we somehow receive a byte total that big.
 		{humanize.EiByte, PiB},
 	}
 
 	for _, tt := range tests {
 		unit := FindBestUnit(tt.bytes)
-		s.Assert().Equal(tt.unit, unit, "%d should be %s", tt.bytes, tt.bytes)
+		assert.Equal(t, tt.unit, unit, "%d should be %s", tt.bytes, tt.unit)
 	}
 }
