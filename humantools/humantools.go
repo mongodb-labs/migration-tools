@@ -9,11 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ccoveille/go-safecast/v2"
 	"github.com/dustin/go-humanize"
 	"github.com/samber/lo"
 	"golang.org/x/exp/constraints"
 )
+
+const precision = 2
+
+var maxFractionalPctStr = fmt.Sprintf("99.%s", strings.Repeat("9", precision))
 
 // DataUnit signifies some unit of data.
 type DataUnit string
@@ -50,17 +53,14 @@ type num16Plus interface {
 
 // FmtReal provides a standard formatting of real numbers, with trailing decimal
 // zeros removed.
-//
-// It may be useful to define an application-wide precision & wrap this
-// function with that.
-func FmtReal[T realNum](num T, precision uint) string {
+func FmtReal[T realNum](num T) string {
 	switch any(num).(type) {
 	case float32, float64:
-		return fmtFloat(num, precision)
+		return fmtFloat(num)
 	case uint64, uint:
 		// Uints that can’t be int64 need to be formatted as floats.
 		if uint64(num) > math.MaxInt64 {
-			return fmtFloat(num, precision)
+			return fmtFloat(num)
 		}
 
 		// Any other uint* type can be an int, which we format below.
@@ -88,7 +88,7 @@ func DurationToDHMS(duration time.Duration) string {
 	minutes := int(math.Floor(duration.Minutes())) % 60
 	secs := math.Mod(duration.Seconds(), 60)
 
-	str := FmtReal(secs, 2) + "s"
+	str := FmtReal(secs) + "s"
 
 	if days > 0 {
 		return fmt.Sprintf("%dd %dh %dm %s", days, hours, minutes, str)
@@ -105,9 +105,9 @@ func DurationToDHMS(duration time.Duration) string {
 
 // FmtBytes is a convenience that combines BytesToUnit with FindBestUnit.
 // Use it to format a single count of bytes.
-func FmtBytes[T num16Plus](count T, precision uint) string {
+func FmtBytes[T num16Plus](count T) string {
 	unit := FindBestUnit(count)
-	return BytesToUnit(count, unit, precision) + " " + string(unit)
+	return BytesToUnit(count, unit) + " " + string(unit)
 }
 
 // FindBestUnit gives the “best” DataUnit for the given `count` of bytes.
@@ -154,7 +154,7 @@ func FindBestUnit[T num16Plus](count T) DataUnit {
 // BytesToUnit returns a stringified number that represents `count`
 // in the given `unit`. For example, count=1024 and unit=KiB would
 // return “1”.
-func BytesToUnit[T num16Plus](count T, unit DataUnit, precision uint) string {
+func BytesToUnit[T num16Plus](count T, unit DataUnit) string {
 	// Ideally go-humanize could do this for us,
 	// but as of this writing it can’t.
 	// https://github.com/dustin/go-humanize/issues/111
@@ -165,7 +165,7 @@ func BytesToUnit[T num16Plus](count T, unit DataUnit, precision uint) string {
 	// as well keep it simple where we can.
 
 	if unit == Bytes {
-		return FmtReal(count, precision)
+		return FmtReal(count)
 	}
 
 	myUnitSize, exists := unitSize[unit]
@@ -174,35 +174,35 @@ func BytesToUnit[T num16Plus](count T, unit DataUnit, precision uint) string {
 		panic(fmt.Sprintf("Missing unit in unitSize: %s", unit))
 	}
 
-	return FmtReal(float64(count)/float64(myUnitSize), precision)
+	return FmtReal(float64(count) / float64(myUnitSize))
 }
 
 // FmtPercent returns a stringified percentage without a trailing `%`,
 // formatted as per FmtFloat(). FmtPercent also ensures that any
 // percentage less than 100% is reported as something less; e.g.,
 // 99.999997 doesn’t get rounded up to 100.
-func FmtPercent[T, U realNum](numerator T, denominator U, precision uint) string {
+func FmtPercent[T, U realNum](numerator T, denominator U) string {
 	lo.Assert(denominator != 0, "denominator must be nonzero")
 
 	ratio := 100 * float64(numerator) / float64(denominator)
 
 	if ratio < 100 {
 		// Round, but clamp so we never return exactly “100”.
-		rounded := roundFloat(ratio, precision)
+		rounded := roundFloat(ratio)
 		if rounded >= 100 {
-			return "99." + strings.Repeat("9", safecast.MustConvert[int](precision))
+			return maxFractionalPctStr
 		}
-		return FmtReal(rounded, precision)
+		return FmtReal(rounded)
 	}
 
-	return FmtReal(ratio, precision)
+	return FmtReal(ratio)
 }
 
-func fmtFloat[T realNum](num T, precision uint) string {
-	return humanize.Commaf(roundFloat(float64(num), precision))
+func fmtFloat[T realNum](num T) string {
+	return humanize.Commaf(roundFloat(float64(num)))
 }
 
-func roundFloat(val float64, precision uint) float64 {
-	ratio := math.Pow10(safecast.MustConvert[int](precision))
+func roundFloat(val float64) float64 {
+	ratio := math.Pow10(precision)
 	return math.Round(val*ratio) / ratio
 }

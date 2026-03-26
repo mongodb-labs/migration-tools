@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const precision = 2
-
 func TestDurationToDHMS(t *testing.T) {
 	tests := []struct {
 		millis uint
@@ -69,21 +67,21 @@ func TestFmtPercent(t *testing.T) {
 	assert.Equal(
 		t,
 		"23.45",
-		FmtPercent(uint(2_345_111), uint(10_000_000), precision),
+		FmtPercent(uint(2_345_111), uint(10_000_000)),
 		"numeric precision is as expected (uint)",
 	)
 
 	assert.Equal(
 		t,
 		"23.45",
-		FmtPercent(int(2_345_111), uint(10_000_000), precision),
+		FmtPercent(int(2_345_111), uint(10_000_000)),
 		"numeric precision is as expected (int / uint)",
 	)
 
 	assert.Equal(
 		t,
 		"23.45",
-		FmtPercent(float64(2_345_111), uint(10_000_000), precision),
+		FmtPercent(float64(2_345_111), uint(10_000_000)),
 		"numeric precision is as expected (float64 / uint)",
 	)
 
@@ -91,28 +89,28 @@ func TestFmtPercent(t *testing.T) {
 	assert.NotEqual(
 		t,
 		"100",
-		FmtPercent(bigNum, 1+bigNum, precision),
+		FmtPercent(bigNum, 1+bigNum),
 		"No false \"100 percent\" should happen",
 	)
 
 	assert.Equal(
 		t,
 		"100",
-		FmtPercent(uint(10), uint(10), precision),
+		FmtPercent(uint(10), uint(10)),
 		"equal numerator and denominator is exactly 100",
 	)
 
 	assert.Equal(
 		t,
 		"0",
-		FmtPercent(uint(0), uint(100), precision),
+		FmtPercent(uint(0), uint(100)),
 		"zero numerator",
 	)
 
 	assert.Equal(
 		t,
 		"110",
-		FmtPercent(uint(11), uint(10), precision),
+		FmtPercent(uint(11), uint(10)),
 		"numerator exceeding denominator is over 100",
 	)
 }
@@ -130,7 +128,7 @@ func TestFmtReal(t *testing.T) {
 	}
 
 	for _, tt := range intTests {
-		assert.Equal(t, tt.result, FmtReal(tt.num, precision), "%d", tt.num)
+		assert.Equal(t, tt.result, FmtReal(tt.num), "%d", tt.num)
 	}
 
 	floatTests := []struct {
@@ -145,7 +143,7 @@ func TestFmtReal(t *testing.T) {
 	}
 
 	for _, tt := range floatTests {
-		assert.Equal(t, tt.result, FmtReal(tt.num, precision), "%f", tt.num)
+		assert.Equal(t, tt.result, FmtReal(tt.num), "%f", tt.num)
 	}
 
 	// uint64 values exceeding MaxInt64 would overflow int64; verify they
@@ -153,7 +151,7 @@ func TestFmtReal(t *testing.T) {
 	big := uint64(math.MaxInt64) + 1
 	assert.NotContains(
 		t,
-		FmtReal(big, precision),
+		FmtReal(big),
 		"-",
 		"large uint64 should not produce a negative result",
 	)
@@ -175,7 +173,7 @@ func TestFmtBytes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		assert.Equal(t, tt.want, FmtBytes(tt.bytes, precision), "%d bytes", tt.bytes)
+		assert.Equal(t, tt.want, FmtBytes(tt.bytes), "%d bytes", tt.bytes)
 	}
 }
 
@@ -195,7 +193,7 @@ func TestBytesToUnit(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		output := BytesToUnit(tt.bytes, tt.unit, precision)
+		output := BytesToUnit(tt.bytes, tt.unit)
 		assert.Equal(
 			t,
 			tt.output, output,
