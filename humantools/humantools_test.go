@@ -151,7 +151,12 @@ func TestFmtReal(t *testing.T) {
 	// uint64 values exceeding MaxInt64 would overflow int64; verify they
 	// are formatted as a positive number.
 	big := uint64(math.MaxInt64) + 1
-	assert.NotContains(t, FmtReal(big, precision), "-", "large uint64 should not produce a negative result")
+	assert.NotContains(
+		t,
+		FmtReal(big, precision),
+		"-",
+		"large uint64 should not produce a negative result",
+	)
 }
 
 func TestFmtBytes(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ccoveille/go-safecast/v2"
 	"github.com/dustin/go-humanize"
 	"github.com/samber/lo"
 	"golang.org/x/exp/constraints"
@@ -189,7 +190,7 @@ func FmtPercent[T, U realNum](numerator T, denominator U, precision uint) string
 		// Round, but clamp so we never return exactly “100”.
 		rounded := roundFloat(ratio, precision)
 		if rounded >= 100 {
-			return "99." + strings.Repeat("9", int(precision))
+			return "99." + strings.Repeat("9", safecast.MustConvert[int](precision))
 		}
 		return FmtReal(rounded, precision)
 	}
@@ -202,6 +203,6 @@ func fmtFloat[T realNum](num T, precision uint) string {
 }
 
 func roundFloat(val float64, precision uint) float64 {
-	ratio := math.Pow10(int(precision))
+	ratio := math.Pow10(safecast.MustConvert[int](precision))
 	return math.Round(val*ratio) / ratio
 }
