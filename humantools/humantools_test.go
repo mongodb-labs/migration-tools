@@ -11,38 +11,39 @@ import (
 
 const precision = 2
 
-func TestDurationToHMS(t *testing.T) {
-	secTests := []struct {
-		secs uint
-		hms  string
+func TestDurationToDHMS(t *testing.T) {
+	tests := []struct {
+		millis uint
+		dhms   string
 	}{
-		{1, "1s"},
-		{59, "59s"},
-		{60, "1m 0s"},
-		{3599, "59m 59s"},
-		{86399, "23h 59m 59s"},
-		{86400, "24h 0m 0s"},
-		{7 * 86400, "168h 0m 0s"},
-		{70 * 86400, "1680h 0m 0s"},
-	}
-
-	for _, tt := range secTests {
-		hms := DurationToHMS(time.Duration(tt.secs) * time.Second)
-		assert.Equal(t, tt.hms, hms, "%.02f secs -> “%s”", tt.secs, tt.hms)
-	}
-
-	durationTests := []struct {
-		dur time.Duration
-		hms string
-	}{
+		// sub-minute
 		{0, "0s"},
-		{time.Duration(500) * time.Millisecond, "0.5s"},
-		{time.Duration(1234) * time.Millisecond, "1.23s"},
+		{500, "0.5s"},
+		{1000, "1s"},
+		{1234, "1.23s"},
+		{1500, "1.5s"},
+		{59000, "59s"},
+		{59990, "59.99s"},
+		// minutes
+		{60000, "1m 0s"},
+		{90500, "1m 30.5s"},
+		{3599000, "59m 59s"},
+		{3599990, "59m 59.99s"},
+		// hours
+		{86399000, "23h 59m 59s"},
+		{86399500, "23h 59m 59.5s"},
+		// days — hours, minutes, seconds always shown
+		{86400000, "1d 0h 0m 0s"},
+		{86400000 + 3661500, "1d 1h 1m 1.5s"},
+		{7 * 86400000, "7d 0h 0m 0s"},
+		{70 * 86400000, "70d 0h 0m 0s"},
+		{70*86400000 + 3*3600000 + 22*60000 + 3230, "70d 3h 22m 3.23s"},
 	}
 
-	for _, tt := range durationTests {
-		hms := DurationToHMS(tt.dur)
-		assert.Equal(t, tt.hms, hms, "%s -> “%s”", tt.dur, tt.hms)
+	for _, tt := range tests {
+		dur := time.Duration(tt.millis) * time.Millisecond
+		dhms := DurationToDHMS(dur)
+		assert.Equal(t, tt.dhms, dhms, "%dms -> %s", tt.millis, tt.dhms)
 	}
 }
 
@@ -73,8 +74,86 @@ func TestFmtPercent(t *testing.T) {
 		t,
 		"100",
 		FmtPercent(bigNum, 1+bigNum, precision),
-		"No false “100 percent” should happen",
+		"No false \"100 percent\" should happen",
 	)
+
+	assert.Equal(
+		t,
+		"100",
+		FmtPercent(uint(10), uint(10), precision),
+		"equal numerator and denominator is exactly 100",
+	)
+
+	assert.Equal(
+		t,
+		"0",
+		FmtPercent(uint(0), uint(100), precision),
+		"zero numerator",
+	)
+
+	assert.Equal(
+		t,
+		"110",
+		FmtPercent(uint(11), uint(10), precision),
+		"numerator exceeding denominator is over 100",
+	)
+}
+
+func TestFmtReal(t *testing.T) {
+	intTests := []struct {
+		num    int64
+		result string
+	}{
+		{0, "0"},
+		{42, "42"},
+		{1_234_567, "1,234,567"},
+		{-1_234_567, "-1,234,567"},
+		{math.MaxInt64, "9,223,372,036,854,775,807"},
+	}
+
+	for _, tt := range intTests {
+		assert.Equal(t, tt.result, FmtReal(tt.num, precision), "%d", tt.num)
+	}
+
+	floatTests := []struct {
+		num    float64
+		result string
+	}{
+		{0.0, "0"},
+		{3.14159, "3.14"},
+		{1234.567, "1,234.57"},
+		{1.5, "1.5"},
+		{1_234_567.89, "1,234,567.89"},
+	}
+
+	for _, tt := range floatTests {
+		assert.Equal(t, tt.result, FmtReal(tt.num, precision), "%f", tt.num)
+	}
+
+	// uint64 values exceeding MaxInt64 would overflow int64; verify they
+	// are formatted as a positive number.
+	big := uint64(math.MaxInt64) + 1
+	assert.NotContains(t, FmtReal(big, precision), "-", "large uint64 should not produce a negative result")
+}
+
+func TestFmtBytes(t *testing.T) {
+	tests := []struct {
+		bytes uint64
+		want  string
+	}{
+		{0, "0 bytes"},
+		{1, "1 bytes"},
+		{1023, "1,023 bytes"},
+		{1024, "1 KiB"},
+		{humanize.MiByte, "1 MiB"},
+		{humanize.GiByte, "1 GiB"},
+		{humanize.TiByte, "1 TiB"},
+		{humanize.PiByte, "1 PiB"},
+	}
+
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, FmtBytes(tt.bytes, precision), "%d bytes", tt.bytes)
+	}
 }
 
 func TestBytesToUnit(t *testing.T) {
@@ -109,8 +188,13 @@ func TestByteConversion(t *testing.T) {
 	}{
 		{0, Bytes},
 		{1, Bytes},
-		{1234567, MiB},
+		{1023, Bytes},
+		{1024, KiB},
 		{1204, KiB},
+		{1234567, MiB},
+		{humanize.GiByte, GiB},
+		{humanize.TiByte, TiB},
+		{humanize.PiByte, PiB},
 
 		// go-humanize supports Exbibytes; we might as well ensure
 		// good behavior if we somehow receive a byte total that big.

@@ -71,17 +71,23 @@ func FmtBytes[T num16Plus](count T, precision uint) string {
 	return BytesToUnit(count, unit, precision) + " " + string(unit)
 }
 
-// DurationToHMS stringifies `duration` as, e.g., "1h 22m 3.23s".
+// DurationToDHMS stringifies `duration` as, e.g., "1h 22m 3.23s".
 // It’s a lot like Duration.String(), but with spaces between,
 // the lowest unit shown is always the second, and this rounds to
-// the nearest hundredth of a second.
-func DurationToHMS(duration time.Duration) string {
-	hours := int(math.Floor(duration.Hours()))
+// the nearest hundredth of a second. For durations >= 24h, days are
+// shown instead of unbounded hours, e.g., "2d 3h 22m 3.23s"; in that
+// case hours, minutes, and seconds are always included even if zero.
+func DurationToDHMS(duration time.Duration) string {
+	days := int(math.Floor(duration.Hours() / 24))
+	hours := int(math.Floor(duration.Hours())) % 24
 	minutes := int(math.Floor(duration.Minutes())) % 60
-
 	secs := math.Mod(duration.Seconds(), 60)
 
 	str := FmtReal(secs, 2) + "s"
+
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh %dm %s", days, hours, minutes, str)
+	}
 
 	if hours > 0 {
 		str = fmt.Sprintf("%dh %dm %s", hours, minutes, str)
