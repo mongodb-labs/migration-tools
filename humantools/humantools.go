@@ -1,3 +1,6 @@
+// Package humantools exports various functions that are useful in “humanizing”
+// numbers in various contexts. In large part it derives from & extends
+// github.com/dustin/go-humanize; see that package for additional functionality.
 package humantools
 
 import (
@@ -44,8 +47,11 @@ type num16Plus interface {
 		~int | ~int16 | ~int32 | ~int64
 }
 
-// FmtReal provides a standard formatting of real numbers, with a consistent
-// precision and trailing decimal zeros removed.
+// FmtReal provides a standard formatting of real numbers, with trailing decimal
+// zeros removed.
+//
+// It may be useful to define an application-wide precision & wrap this
+// function with that.
 func FmtReal[T realNum](num T, precision uint) string {
 	switch any(num).(type) {
 	case float32, float64:
@@ -62,13 +68,6 @@ func FmtReal[T realNum](num T, precision uint) string {
 	}
 
 	return humanize.Comma(int64(num))
-}
-
-// FmtBytes is a convenience that combines BytesToUnit with FindBestUnit.
-// Use it to format a single count of bytes.
-func FmtBytes[T num16Plus](count T, precision uint) string {
-	unit := FindBestUnit(count)
-	return BytesToUnit(count, unit, precision) + " " + string(unit)
 }
 
 // DurationToDHMS stringifies `duration` as, e.g., "1h 22m 3.23s".
@@ -103,9 +102,16 @@ func DurationToDHMS(duration time.Duration) string {
 	return str
 }
 
+// FmtBytes is a convenience that combines BytesToUnit with FindBestUnit.
+// Use it to format a single count of bytes.
+func FmtBytes[T num16Plus](count T, precision uint) string {
+	unit := FindBestUnit(count)
+	return BytesToUnit(count, unit, precision) + " " + string(unit)
+}
+
 // FindBestUnit gives the “best” DataUnit for the given `count` of bytes.
 //
-// You can then give that DataUnit to BytesToUnit() to stringify
+// You can then give that DataUnit to BytesToUnit() to format
 // multiple byte counts to the same unit.
 func FindBestUnit[T num16Plus](count T) DataUnit {
 	// humanize.IBytes() does most of what we want but lacks the
@@ -126,7 +132,7 @@ func FindBestUnit[T num16Plus](count T) DataUnit {
 	// the values of the unitSize map (above).
 	unitNum = 1 << unitNum
 
-	// Just in case, someday, exibytes become relevant …
+	// Just in case, someday, exbibytes become relevant …
 	var biggestSize uint64
 	var biggestUnit DataUnit
 
@@ -146,7 +152,7 @@ func FindBestUnit[T num16Plus](count T) DataUnit {
 
 // BytesToUnit returns a stringified number that represents `count`
 // in the given `unit`. For example, count=1024 and unit=KiB would
-// return "1".
+// return “1”.
 func BytesToUnit[T num16Plus](count T, unit DataUnit, precision uint) string {
 	// Ideally go-humanize could do this for us,
 	// but as of this writing it can’t.
