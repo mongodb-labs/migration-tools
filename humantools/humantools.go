@@ -1,0 +1,170 @@
+package humantools
+
+import (
+	"fmt"
+	"math"
+	"time"
+
+	"github.com/dustin/go-humanize"
+	"golang.org/x/exp/constraints"
+)
+
+// DataUnit signifies some unit of data.
+type DataUnit string
+
+const (
+	Bytes DataUnit = "bytes"
+	KiB   DataUnit = "KiB"
+	MiB   DataUnit = "MiB"
+	GiB   DataUnit = "GiB"
+	TiB   DataUnit = "TiB"
+	PiB   DataUnit = "PiB"
+
+	// Anything larger than the above seems like overkill.
+)
+
+var unitSize = map[DataUnit]uint64{
+	KiB: humanize.KiByte,
+	MiB: humanize.MiByte,
+	GiB: humanize.GiByte,
+	TiB: humanize.TiByte,
+	PiB: humanize.PiByte,
+}
+
+type realNum interface {
+	constraints.Float | constraints.Integer
+}
+
+// num16Plus is like realNum, but it excludes 8-bit int/uint.
+type num16Plus interface {
+	constraints.Float |
+		~uint | ~uint16 | ~uint32 | ~uint64 |
+		~int | ~int16 | ~int32 | ~int64
+}
+
+// FmtReal provides a standard formatting of real numbers, with a consistent
+// precision and trailing decimal zeros removed.
+func FmtReal[T realNum](num T, precision uint) string {
+	switch any(num).(type) {
+	case float32, float64:
+		return fmtFloat(num, precision)
+	case uint64, uint:
+		// Uints that can’t be int64 need to be formatted as floats.
+		if uint64(num) > math.MaxInt64 {
+			return fmtFloat(num, precision)
+		}
+
+		// Any other uint* type can be an int, which we format below.
+	default:
+		// Formatted below.
+	}
+
+	return humanize.Comma(int64(num))
+}
+
+// FmtBytes is a convenience that combines BytesToUnit with FindBestUnit.
+// Use it to format a single count of bytes.
+func FmtBytes[T num16Plus](count T, precision uint) string {
+	unit := FindBestUnit(count)
+	return BytesToUnit(count, unit, precision) + " " + string(unit)
+}
+
+// DurationToHMS stringifies `duration` as, e.g., "1h 22m 3.23s".
+// It’s a lot like Duration.String(), but with spaces between,
+// the lowest unit shown is always the second, and this rounds to
+// the nearest hundredth of a second.
+func DurationToHMS(duration time.Duration) string {
+
+	hours := int(math.Floor(duration.Hours()))
+	minutes := int(math.Floor(duration.Minutes())) % 60
+
+	secs := math.Mod(duration.Seconds(), 60)
+
+	str := FmtReal(secs, 2) + "s"
+
+	if hours > 0 {
+		str = fmt.Sprintf("%dh %dm %s", hours, minutes, str)
+	} else if minutes > 0 {
+		str = fmt.Sprintf("%dm %s", minutes, str)
+	}
+
+	return str
+}
+
+// FindBestUnit gives the “best” DataUnit for the given `count` of bytes.
+//
+// You can then give that DataUnit to BytesToUnit() to stringify
+// multiple byte counts to the same unit.
+func FindBestUnit[T num16Plus](count T) DataUnit {
+
+	// humanize.IBytes() does most of what we want but lacks the
+	// flexibility to specify a precision. It’s not complicated to
+	// implement here anyway.
+
+	if count < T(humanize.KiByte) {
+		return Bytes
+	}
+
+	// If the log2 is, e.g., 32.05, we want to use 2^30, i.e., GiB.
+	log2 := math.Log2(float64(count))
+
+	// Convert log2 to the next-lowest multiple of 10.
+	unitNum := 10 * uint64(math.Floor(log2/10))
+
+	// Now find that power of 2, which we can compare against
+	// the values of the unitSize map (above).
+	unitNum = 1 << unitNum
+
+	// Just in case, someday, exibytes become relevant …
+	var biggestSize uint64
+	var biggestUnit DataUnit
+
+	for unit, size := range unitSize {
+		if size == unitNum {
+			return unit
+		}
+
+		if size > biggestSize {
+			biggestSize = size
+			biggestUnit = unit
+		}
+	}
+
+	return biggestUnit
+}
+
+// BytesToUnit returns a stringified number that represents `count`
+// in the given `unit`. For example, count=1024 and unit=KiB would
+// return "1"., p
+func BytesToUnit[T num16Plus](count T, unit DataUnit, precision uint) string {
+
+	// Ideally go-humanize could do this for us,
+	// but as of this writing it can’t.
+	// https://github.com/dustin/go-humanize/issues/111
+
+	// We could put Bytes into the unitSize map above and handle it
+	// the same as other units, but that would entail int/float
+	// conversion and possibly risk little rounding errors. We might
+	// as well keep it simple where we can.
+
+	if unit == Bytes {
+		return FmtReal(count, precision)
+	}
+
+	myUnitSize, exists := unitSize[unit]
+
+	if !exists {
+		panic(fmt.Sprintf("Missing unit in unitSize: %s", unit))
+	}
+
+	return FmtReal(float64(count)/float64(myUnitSize), precision)
+}
+
+func fmtFloat[T realNum](num T, precision uint) string {
+	return humanize.Commaf(roundFloat(float64(num), precision))
+}
+
+func roundFloat(val float64, precision uint) float64 {
+	ratio := math.Pow10(int(precision))
+	return math.Round(val*ratio) / ratio
+}
