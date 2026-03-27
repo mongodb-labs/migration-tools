@@ -95,12 +95,12 @@ func DurationToDHMS(duration time.Duration) string {
 	duration = duration.Round(centisecond)
 
 	totalSecs := int64(duration / time.Second)
-	subSec := duration % time.Second // always a multiple of centisecond
+	remainder := duration % time.Second // always a multiple of centisecond
 
 	days := totalSecs / 86400
 	hours := (totalSecs / 3600) % 24
 	minutes := (totalSecs / 60) % 60
-	secs := float64(totalSecs%60) + float64(subSec)/float64(time.Second)
+	secs := float64(totalSecs%60) + float64(remainder)/float64(time.Second)
 
 	str := FmtReal(secs) + "s"
 
@@ -145,8 +145,9 @@ func FindBestUnit[T num16Plus](count T) DataUnit {
 
 	// Clamp to the largest multiple of 10 safe to shift a uint64 by.
 	// Very large float inputs (e.g. float64 near MaxFloat64) can produce
-	// unitNum >= 64; Go defines 1<<n as 0 for n >= 64, which would silently
-	// match nothing and fall through to biggestUnit via a 0-comparison.
+	// unitNum >= the bit width of uint64; shifting uint64(1) by that amount
+	// would yield 0, which would silently match nothing and fall through to
+	// biggestUnit via a 0-comparison.
 	const maxShift = uint64(60)
 	if unitNum > maxShift {
 		unitNum = maxShift
@@ -154,7 +155,7 @@ func FindBestUnit[T num16Plus](count T) DataUnit {
 
 	// Now find that power of 2, which we can compare against
 	// the values of the unitSize map (above).
-	unitNum = 1 << unitNum
+	unitNum = uint64(1) << unitNum
 
 	// Just in case, someday, exbibytes become relevant …
 	var biggestSize uint64

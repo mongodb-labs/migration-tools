@@ -217,6 +217,25 @@ func TestFmtBytes(t *testing.T) {
 	assert.Equal(t, PiB, unit, "MaxFloat64 should map to the largest unit")
 }
 
+func TestFindBestUnit(t *testing.T) {
+	tests := []struct {
+		bytes uint64
+		unit  DataUnit
+	}{
+		{humanize.KiByte, KiB},
+		{humanize.MiByte, MiB},
+		{humanize.GiByte, GiB},
+		// TiB = 1<<40 and PiB = 1<<50: with an untyped shift on a 32-bit
+		// platform, `1 << unitNum` silently overflows int to 0 and picks
+		// the wrong unit. Verify uint64(1) << unitNum is used instead.
+		{humanize.TiByte, TiB},
+		{humanize.PiByte, PiB},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.unit, FindBestUnit(tt.bytes), "%d bytes", tt.bytes)
+	}
+}
+
 func TestBytesToUnit(t *testing.T) {
 	tests := []struct {
 		bytes  uint64
