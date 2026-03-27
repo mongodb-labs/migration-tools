@@ -106,7 +106,7 @@ func DurationToDHMS(duration time.Duration) string {
 	minutes := (totalSecs / 60) % 60
 	secs := float64(totalSecs%60) + float64(remainder)/float64(time.Second)
 
-	// This function explicitly advertizes its own precision, which must
+	// This function explicitly advertises its own precision, which must
 	// match the centisecond logic above.
 	str := fmtRealPrecision(secs, 2) + "s"
 
