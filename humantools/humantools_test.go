@@ -87,7 +87,12 @@ func TestDurationToDHMS(t *testing.T) {
 
 	// math.MinInt64 negation overflows; must not infinite-loop or panic.
 	result := DurationToDHMS(time.Duration(math.MinInt64))
-	assert.True(t, len(result) > 0 && result[0] == '-', "MinInt64 should produce a negative duration string, got %q", result)
+	assert.True(
+		t,
+		len(result) > 0 && result[0] == '-',
+		"MinInt64 should produce a negative duration string, got %q",
+		result,
+	)
 }
 
 func TestFmtPercent(t *testing.T) {
