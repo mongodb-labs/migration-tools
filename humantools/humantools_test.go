@@ -189,6 +189,28 @@ func TestFmtReal(t *testing.T) {
 	)
 
 	assert.Equal(t, "1,234,567", FmtReal(uintptr(1_234_567)))
+
+	// Derived types with underlying float/int/uint kinds.
+	type myFloat64 float64
+	type myFloat32 float32
+	type myInt int
+	type myInt64 int64
+	type myUint64 uint64
+	type myUintptr uintptr
+
+	assert.Equal(t, "3.14", FmtReal(myFloat64(3.14159)))
+	assert.Equal(t, "3.14", FmtReal(myFloat32(3.14159)))
+	assert.Equal(t, "1,234,567", FmtReal(myInt(1_234_567)))
+	assert.Equal(t, "-42", FmtReal(myInt64(-42)))
+	assert.Equal(t, "1,234,567", FmtReal(myUintptr(1_234_567)))
+
+	bigDerived := myUint64(math.MaxInt64) + 1
+	assert.NotContains(
+		t,
+		FmtReal(bigDerived),
+		"-",
+		"large derived uint64 should not produce a negative result",
+	)
 }
 
 func TestFmtBytes(t *testing.T) {

@@ -6,6 +6,7 @@ package humantools
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 
@@ -69,7 +70,17 @@ func fmtRealPrecision[T realNum](num T, precision int) string {
 
 		// Any other uint* type can be an int, which we format below.
 	default:
-		// Formatted below.
+		// Derived type: inspect the underlying kind via reflection.
+		switch reflect.TypeOf(num).Kind() {
+		case reflect.Float32, reflect.Float64:
+			return fmtFloat(num, precision)
+		case reflect.Uint64, reflect.Uint, reflect.Uintptr:
+			// Uints that can’t be int64 need to be formatted as floats.
+			if uint64(num) > math.MaxInt64 {
+				return fmtFloat(num, precision)
+			}
+		}
+		// All other kinds (int*, uint8/16/32) fall through to Comma below.
 	}
 
 	return humanize.Comma(int64(num))
