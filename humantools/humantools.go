@@ -202,7 +202,7 @@ func BytesToUnit[T num16Plus](count T, unit DataUnit) string {
 }
 
 // FmtPercent returns a stringified percentage without a trailing `%`,
-// formatted as per FmtFloat(). FmtPercent also ensures that any
+// formatted as per FmtReal(). FmtPercent also ensures that any
 // percentage less than 100% is reported as something less; e.g.,
 // 99.999997 doesn’t get rounded up to 100.
 func FmtPercent[T, U realNum](numerator T, denominator U) string {
