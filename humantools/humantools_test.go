@@ -61,6 +61,33 @@ func TestDurationToDHMS(t *testing.T) {
 		dhms := DurationToDHMS(dur)
 		assert.Equal(t, tt.dhms, dhms, "%dms -> %s", tt.millis, tt.dhms)
 	}
+
+	// Rounding carry: values that round up to the next minute/hour/day.
+	roundingCarryTests := []struct {
+		dur  time.Duration
+		dhms string
+	}{
+		// 59.995s rounds to 60s → carries into minutes
+		{59*time.Second + 995*time.Millisecond, "1m 0s"},
+		// 1m 59.995s rounds to 2m 0s
+		{time.Minute + 59*time.Second + 995*time.Millisecond, "2m 0s"},
+		// 59m 59.995s rounds to 1h 0m 0s
+		{59*time.Minute + 59*time.Second + 995*time.Millisecond, "1h 0m 0s"},
+		// 23h 59m 59.995s rounds to 1d 0h 0m 0s
+		{23*time.Hour + 59*time.Minute + 59*time.Second + 995*time.Millisecond, "1d 0h 0m 0s"},
+		// 59.994s rounds to 59.99s (no carry)
+		{59*time.Second + 994*time.Millisecond, "59.99s"},
+		// negative carry
+		{-(59*time.Second + 995*time.Millisecond), "-1m 0s"},
+	}
+	for _, tt := range roundingCarryTests {
+		dhms := DurationToDHMS(tt.dur)
+		assert.Equal(t, tt.dhms, dhms, "%v -> %s", tt.dur, tt.dhms)
+	}
+
+	// math.MinInt64 negation overflows; must not infinite-loop or panic.
+	result := DurationToDHMS(time.Duration(math.MinInt64))
+	assert.True(t, len(result) > 0 && result[0] == '-', "MinInt64 should produce a negative duration string, got %q", result)
 }
 
 func TestFmtPercent(t *testing.T) {
@@ -155,6 +182,8 @@ func TestFmtReal(t *testing.T) {
 		"-",
 		"large uint64 should not produce a negative result",
 	)
+
+	assert.Equal(t, "1,234,567", FmtReal(uintptr(1_234_567)))
 }
 
 func TestFmtBytes(t *testing.T) {
@@ -175,6 +204,12 @@ func TestFmtBytes(t *testing.T) {
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, FmtBytes(tt.bytes), "%d bytes", tt.bytes)
 	}
+
+	// Very large float inputs produce log2 >> 63; the shift would overflow
+	// uint64 to 0, picking the wrong unit. Verify we clamp correctly and
+	// return the largest defined unit (PiB) without panicking.
+	unit := FindBestUnit(math.MaxFloat64)
+	assert.Equal(t, PiB, unit, "MaxFloat64 should map to the largest unit")
 }
 
 func TestBytesToUnit(t *testing.T) {

@@ -57,7 +57,7 @@ func FmtReal[T realNum](num T) string {
 	switch any(num).(type) {
 	case float32, float64:
 		return fmtFloat(num)
-	case uint64, uint:
+	case uint64, uint, uintptr:
 		// Uints that can’t be int64 need to be formatted as floats.
 		if uint64(num) > math.MaxInt64 {
 			return fmtFloat(num)
@@ -80,13 +80,27 @@ func FmtReal[T realNum](num T) string {
 // Negative durations are formatted with a leading "-".
 func DurationToDHMS(duration time.Duration) string {
 	if duration < 0 {
-		return "-" + DurationToDHMS(-duration)
+		if duration == time.Duration(math.MinInt64) {
+			duration = math.MaxInt64
+		} else {
+			duration = -duration
+		}
+		return "-" + DurationToDHMS(duration)
 	}
 
-	days := int(math.Floor(duration.Hours() / 24))
-	hours := int(math.Floor(duration.Hours())) % 24
-	minutes := int(math.Floor(duration.Minutes())) % 60
-	secs := math.Mod(duration.Seconds(), 60)
+	// Pre-round to the nearest centisecond (matching precision=2) so that
+	// values like 59.9995s become 60s before decomposition, preventing
+	// FmtReal from producing "60s" without carrying into minutes.
+	const centisecond = 10 * time.Millisecond
+	duration = duration.Round(centisecond)
+
+	totalSecs := int64(duration / time.Second)
+	subSec := duration % time.Second // always a multiple of centisecond
+
+	days := totalSecs / 86400
+	hours := (totalSecs / 3600) % 24
+	minutes := (totalSecs / 60) % 60
+	secs := float64(totalSecs%60) + float64(subSec)/float64(time.Second)
 
 	str := FmtReal(secs) + "s"
 
@@ -128,6 +142,15 @@ func FindBestUnit[T num16Plus](count T) DataUnit {
 
 	// Convert log2 to the next-lowest multiple of 10.
 	unitNum := 10 * uint64(math.Floor(log2/10))
+
+	// Clamp to the largest multiple of 10 safe to shift a uint64 by.
+	// Very large float inputs (e.g. float64 near MaxFloat64) can produce
+	// unitNum >= 64; Go defines 1<<n as 0 for n >= 64, which would silently
+	// match nothing and fall through to biggestUnit via a 0-comparison.
+	const maxShift = uint64(60)
+	if unitNum > maxShift {
+		unitNum = maxShift
+	}
 
 	// Now find that power of 2, which we can compare against
 	// the values of the unitSize map (above).
