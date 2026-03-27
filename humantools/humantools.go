@@ -54,13 +54,17 @@ type num16Plus interface {
 // FmtReal provides a standard formatting of real numbers, with trailing decimal
 // zeros removed.
 func FmtReal[T realNum](num T) string {
+	return fmtRealPrecision(num, precision)
+}
+
+func fmtRealPrecision[T realNum](num T, precision int) string {
 	switch any(num).(type) {
 	case float32, float64:
-		return fmtFloat(num)
+		return fmtFloat(num, precision)
 	case uint64, uint, uintptr:
 		// Uints that can’t be int64 need to be formatted as floats.
 		if uint64(num) > math.MaxInt64 {
-			return fmtFloat(num)
+			return fmtFloat(num, precision)
 		}
 
 		// Any other uint* type can be an int, which we format below.
@@ -102,7 +106,9 @@ func DurationToDHMS(duration time.Duration) string {
 	minutes := (totalSecs / 60) % 60
 	secs := float64(totalSecs%60) + float64(remainder)/float64(time.Second)
 
-	str := FmtReal(secs) + "s"
+	// This function explicitly advertizes its own precision, which must
+	// match the centisecond logic above.
+	str := fmtRealPrecision(secs, 2) + "s"
 
 	if days > 0 {
 		return fmt.Sprintf("%dd %dh %dm %s", days, hours, minutes, str)
@@ -132,6 +138,10 @@ func FindBestUnit[T num16Plus](count T) DataUnit {
 	// humanize.IBytes() does most of what we want but lacks the
 	// flexibility to specify a precision. It’s not complicated to
 	// implement here anyway.
+
+	if count < 0 {
+		count = -count
+	}
 
 	if count < T(humanize.KiByte) {
 		return Bytes
@@ -212,7 +222,7 @@ func FmtPercent[T, U realNum](numerator T, denominator U) string {
 
 	if ratio < 100 {
 		// Round, but clamp so we never return exactly “100”.
-		rounded := roundFloat(ratio)
+		rounded := roundFloat(ratio, precision)
 		if rounded >= 100 {
 			return maxFractionalPctStr
 		}
@@ -222,11 +232,11 @@ func FmtPercent[T, U realNum](numerator T, denominator U) string {
 	return FmtReal(ratio)
 }
 
-func fmtFloat[T realNum](num T) string {
-	return humanize.Commaf(roundFloat(float64(num)))
+func fmtFloat[T realNum](num T, precision int) string {
+	return humanize.Commaf(roundFloat(float64(num), precision))
 }
 
-func roundFloat(val float64) float64 {
+func roundFloat(val float64, precision int) float64 {
 	ratio := math.Pow10(precision)
 	return math.Round(val*ratio) / ratio
 }

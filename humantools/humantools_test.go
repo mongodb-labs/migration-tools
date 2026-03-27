@@ -234,6 +234,23 @@ func TestFindBestUnit(t *testing.T) {
 	for _, tt := range tests {
 		assert.Equal(t, tt.unit, FindBestUnit(tt.bytes), "%d bytes", tt.bytes)
 	}
+
+	// Negative values should use the absolute value for unit selection.
+	negTests := []struct {
+		bytes int64
+		unit  DataUnit
+	}{
+		{-1, Bytes},
+		{-1023, Bytes},
+		{-int64(humanize.KiByte), KiB},
+		{-int64(humanize.MiByte), MiB},
+		{-int64(humanize.GiByte), GiB},
+		{-int64(humanize.TiByte), TiB},
+		{-int64(humanize.PiByte), PiB},
+	}
+	for _, tt := range negTests {
+		assert.Equal(t, tt.unit, FindBestUnit(tt.bytes), "%d bytes", tt.bytes)
+	}
 }
 
 func TestBytesToUnit(t *testing.T) {
