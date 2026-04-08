@@ -12,9 +12,11 @@ import (
 )
 
 // LogSystemInfo logs system specs useful for gauging vertical scale.
+// It temporarily reads the current Go memory limit via debug.SetMemoryLimit(-1)
+// and restores it before returning; this touches process-global runtime state.
 func LogSystemInfo(logger *slog.Logger) {
 	memlimitBytes := debug.SetMemoryLimit(-1)
-	debug.SetMemoryLimit(memlimitBytes)
+	defer debug.SetMemoryLimit(memlimitBytes)
 
 	memlimitStr := lo.Ternary(
 		memlimitBytes == math.MaxInt64,
