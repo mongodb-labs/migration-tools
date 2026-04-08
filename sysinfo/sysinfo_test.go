@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// logfWriter wraps t.Logf to implement io.Writer
+// logfWriter wraps t.Logf to implement io.Writer.
 type logfWriter struct {
 	t *testing.T
 }
