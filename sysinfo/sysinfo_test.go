@@ -22,7 +22,7 @@ func TestLogSystemInfo(t *testing.T) {
 	// Create a buffer to capture log output
 	var buf bytes.Buffer
 
-	// Create a multi-writer that writes to both t.Logf and the buffer
+	// Write to both the test log and the buffer
 	multiWriter := io.MultiWriter(logfWriter{t}, &buf)
 
 	// Create a logger that writes to the multi-writer
