@@ -14,7 +14,7 @@ type logfWriter struct {
 }
 
 func (w logfWriter) Write(p []byte) (n int, err error) {
-	w.t.Logf("%s", p)
+	w.t.Log(p)
 	return len(p), nil
 }
 
