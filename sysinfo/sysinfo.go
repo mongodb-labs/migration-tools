@@ -14,6 +14,7 @@ import (
 // LogSystemInfo logs system specs useful for gauging vertical scale.
 func LogSystemInfo(logger *slog.Logger) {
 	memlimitBytes := debug.SetMemoryLimit(-1)
+	debug.SetMemoryLimit(memlimitBytes)
 
 	memlimitStr := lo.Ternary(
 		memlimitBytes == math.MaxInt64,
