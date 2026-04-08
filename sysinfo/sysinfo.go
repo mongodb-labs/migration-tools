@@ -16,7 +16,6 @@ import (
 // and restores it before returning; this touches process-global runtime state.
 func LogSystemInfo(logger *slog.Logger) {
 	memlimitBytes := debug.SetMemoryLimit(-1)
-	defer debug.SetMemoryLimit(memlimitBytes)
 
 	memlimitStr := lo.Ternary(
 		memlimitBytes == math.MaxInt64,
