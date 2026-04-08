@@ -27,11 +27,11 @@ func LogSystemInfo(logger *slog.Logger) {
 		slog.String("gomemlimit", memlimitStr),
 	}
 
-	mem, err := mem.VirtualMemory()
+	memStats, err := mem.VirtualMemory()
 	if err != nil {
 		attrs = append(attrs, slog.Any("totalRAMErr", err))
 	} else {
-		attrs = append(attrs, slog.String("totalRAM", humantools.FmtBytes(mem.Total)))
+		attrs = append(attrs, slog.String("totalRAM", humantools.FmtBytes(memStats.Total)))
 	}
 
 	logger.Info("System info", attrs...)
