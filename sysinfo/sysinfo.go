@@ -110,7 +110,10 @@ func getMemoryAttrs(ctx context.Context) []slog.Attr {
 	}
 
 	if ghwMem.TotalPhysicalBytes > 0 {
-		attrs = append(attrs, slog.String("physical", humantools.FmtBytes(ghwMem.TotalPhysicalBytes)))
+		attrs = append(
+			attrs,
+			slog.String("physical", humantools.FmtBytes(ghwMem.TotalPhysicalBytes)),
+		)
 	}
 	if ghwMem.TotalUsableBytes > 0 {
 		attrs = append(attrs, slog.String("usable", humantools.FmtBytes(ghwMem.TotalUsableBytes)))
