@@ -19,8 +19,8 @@ import (
 
 // LogSystemInfo logs system specs useful for gauging vertical scale.
 func LogSystemInfo(ctx context.Context, logger *slog.Logger) {
-	// NB: Per docs, negative values cause this function not to
-	// alter anything. (Copilot says otherwise, but it’s wrong.)
+	// NB: Per docs, negative values make this function a pure reader.
+	// No state is altered here.
 	memlimitBytes := debug.SetMemoryLimit(-1)
 
 	memlimitStr := lo.Ternary(
