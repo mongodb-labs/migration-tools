@@ -1,0 +1,53 @@
+name: go mod tidy & vendor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-mod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Run go mod tidy
+        run: go mod tidy
+
+      - name: Run go mod vendor
+        run: go mod vendor
+
+      - name: Check for changes
+        run: |
+          DIFF_EXIT=0
+          git diff --exit-code || DIFF_EXIT=$?
+
+          UNTRACKED=$(git ls-files --others --exclude-standard | wc -l)
+
+          if [ $DIFF_EXIT -eq 0 ] && [ $UNTRACKED -eq 0 ]; then
+            echo "✓ go.mod, go.sum, and vendor/ are up-to-date"
+            exit 0
+          fi
+
+          echo "✗ go mod tidy or go mod vendor made changes or created untracked files"
+          echo ""
+
+          if [ $DIFF_EXIT -ne 0 ]; then
+            echo "Changes detected:"
+            git diff --stat
+            echo ""
+          fi
+
+          if [ $UNTRACKED -gt 0 ]; then
+            echo "Untracked files created:"
+            git ls-files --others --exclude-standard
+            echo ""
+          fi
+
+          echo "Please run 'go mod tidy && go mod vendor' locally and commit the changes"
+          exit 1
