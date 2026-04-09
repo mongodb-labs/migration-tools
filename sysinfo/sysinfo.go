@@ -45,15 +45,20 @@ func LogSystemInfo(ctx context.Context, logger *slog.Logger) {
 }
 
 func getCPUAttrs(ctx context.Context) []slog.Attr {
-	cpu, err := ghw.CPU(ctx)
-	if err != nil {
-		return []slog.Attr{
-			slog.Any("cpuInfoErr", err),
-			slog.Uint64("totalLogicalCPUs", uint64(runtime.NumCPU())),
-		}
+	attrs := []slog.Attr{
+		slog.Uint64("totalLogicalCPUs", uint64(runtime.NumCPU())),
 	}
 
-	var attrs []slog.Attr
+	cpu, err := ghw.CPU(ctx)
+	if err != nil {
+		attrs = append(
+			attrs,
+			slog.Any("cpuInfoErr", err),
+		)
+
+		return attrs
+	}
+
 	attrs = append(
 		attrs,
 		slog.Uint64("totalCores", uint64(cpu.TotalCores)),
