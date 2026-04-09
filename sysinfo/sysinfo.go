@@ -10,7 +10,6 @@ import (
 
 	"github.com/jaypipes/ghw"
 	"github.com/mongodb-labs/migration-tools/humantools"
-	"github.com/mongodb-labs/migration-tools/slogtools"
 	"github.com/samber/lo"
 	"github.com/shirou/gopsutil/v4/mem"
 )
@@ -120,7 +119,7 @@ func getMemoryAttrs(ctx context.Context) []slog.Attr {
 		attrs = append(attrs, slog.String("usable", humantools.FmtBytes(ghwMem.TotalUsableBytes)))
 	}
 	if len(ghwMem.SupportedPageSizes) > 0 {
-		pageSizes := make(slogtools.StringSlice, len(ghwMem.SupportedPageSizes))
+		pageSizes := make([]string, len(ghwMem.SupportedPageSizes))
 		for i, size := range ghwMem.SupportedPageSizes {
 			pageSizes[i] = humantools.FmtBytes(size)
 		}
