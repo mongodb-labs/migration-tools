@@ -3,11 +3,11 @@ package sysinfo
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 
 	"github.com/jaypipes/ghw"
@@ -107,7 +107,7 @@ func getCPUAttrs(ctx context.Context) []slog.Attr {
 			attrs = append(
 				attrs,
 				slog.Group(
-					"processor"+strconv.Itoa(i),
+					fmt.Sprintf("processor%d", i),
 					lo.ToAnySlice(groupAttrs)...,
 				),
 			)
