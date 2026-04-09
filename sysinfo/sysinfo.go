@@ -41,7 +41,7 @@ func LogSystemInfo(ctx context.Context, logger *slog.Logger) {
 		lo.ToAnySlice(getMemoryAttrs(ctx))...,
 	))
 
-	logger.Info("System info", lo.ToAnySlice(attrs)...)
+	logger.InfoContext(ctx, "System info", lo.ToAnySlice(attrs)...)
 }
 
 func getCPUAttrs(ctx context.Context) []slog.Attr {
