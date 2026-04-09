@@ -49,7 +49,7 @@ func getCPUAttrs(ctx context.Context) []slog.Attr {
 	if err != nil {
 		return []slog.Attr{
 			slog.Any("cpuInfoErr", err),
-			slog.Int("totalCores", runtime.NumCPU()),
+			slog.Uint64("totalLogicalCPUs", uint64(runtime.NumCPU())),
 		}
 	}
 
