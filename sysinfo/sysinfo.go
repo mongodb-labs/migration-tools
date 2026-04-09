@@ -47,7 +47,7 @@ func LogSystemInfo(ctx context.Context, logger *slog.Logger) {
 
 func getCPUAttrs(ctx context.Context) []slog.Attr {
 	attrs := []slog.Attr{
-		slog.Int("totalLogicalCPUs", runtime.NumCPU()),
+		slog.Int("totalThreads", runtime.NumCPU()),
 	}
 
 	cpuInfo, err := ghw.CPU(ctx)
