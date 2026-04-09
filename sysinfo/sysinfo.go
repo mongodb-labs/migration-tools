@@ -107,7 +107,7 @@ func getCPUAttrs(ctx context.Context) []slog.Attr {
 			attrs = append(
 				attrs,
 				slog.Group(
-					strconv.Itoa(i),
+					"processor"+strconv.Itoa(i),
 					lo.ToAnySlice(groupAttrs)...,
 				),
 			)
