@@ -103,13 +103,15 @@ func getCPUAttrs(ctx context.Context) []slog.Attr {
 
 		// Skip Capabilities since it’s long & esoteric.
 
-		attrs = append(
-			attrs,
-			slog.Group(
-				strconv.Itoa(i),
-				lo.ToAnySlice(groupAttrs)...,
-			),
-		)
+		if len(groupAttrs) > 0 {
+			attrs = append(
+				attrs,
+				slog.Group(
+					strconv.Itoa(i),
+					lo.ToAnySlice(groupAttrs)...,
+				),
+			)
+		}
 	}
 
 	return attrs
