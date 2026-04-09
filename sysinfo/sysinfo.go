@@ -1,3 +1,4 @@
+// Package sysinfo exports tools to query & report system information.
 package sysinfo
 
 import (
