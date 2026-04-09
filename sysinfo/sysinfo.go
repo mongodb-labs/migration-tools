@@ -64,12 +64,8 @@ func getCPUAttrs(ctx context.Context) []slog.Attr {
 		slog.Uint64("totalCores", uint64(cpu.TotalCores)),
 	)
 
-	if cpu.TotalHardwareThreads > 0 {
-		attrs = append(
-			attrs,
-			slog.Uint64("totalThreads", uint64(cpu.TotalHardwareThreads)),
-		)
-	}
+	// TotalHardwareThreads is the same data point as
+	// runtime.NumCPU() above, so we skip it.
 
 	// Log all processor details
 	for i, proc := range cpu.Processors {
