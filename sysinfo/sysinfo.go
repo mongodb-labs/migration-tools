@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/jaypipes/ghw"
+	"github.com/jaypipes/ghw/pkg/cpu"
 	"github.com/mongodb-labs/migration-tools/humantools"
 	"github.com/samber/lo"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -49,7 +50,7 @@ func getCPUAttrs(ctx context.Context) []slog.Attr {
 		slog.Int("totalLogicalCPUs", runtime.NumCPU()),
 	}
 
-	cpu, err := ghw.CPU(ctx)
+	cpuInfo, err := ghw.CPU(ctx)
 	if err != nil {
 		attrs = append(
 			attrs,
@@ -61,16 +62,28 @@ func getCPUAttrs(ctx context.Context) []slog.Attr {
 
 	attrs = append(
 		attrs,
-		slog.Uint64("totalCores", uint64(cpu.TotalCores)),
+		slog.Uint64("totalCores", uint64(cpuInfo.TotalCores)),
 	)
 
 	// TotalHardwareThreads is the same data point as
 	// runtime.NumCPU() above, so we skip it.
 
+	// Only log processor IDs if there are different IDs.
+	allSameID := len(cpuInfo.Processors) <= 1 || lo.EveryBy(
+		cpuInfo.Processors[1:],
+		func(p *cpu.Processor) bool {
+			return p.ID == cpuInfo.Processors[0].ID
+		},
+	)
+
 	// Log all processor details
-	for i, proc := range cpu.Processors {
-		groupAttrs := []slog.Attr{
-			slog.Int64("id", int64(proc.ID)),
+	for i, proc := range cpuInfo.Processors {
+		var groupAttrs []slog.Attr
+
+		if !allSameID {
+			groupAttrs = []slog.Attr{
+				slog.Int("id", proc.ID),
+			}
 		}
 
 		if proc.Vendor != "" {
@@ -80,10 +93,10 @@ func getCPUAttrs(ctx context.Context) []slog.Attr {
 			groupAttrs = append(groupAttrs, slog.String("model", proc.Model))
 		}
 		if proc.NumCores > 0 {
-			groupAttrs = append(groupAttrs, slog.Int64("cores", int64(proc.NumCores)))
+			groupAttrs = append(groupAttrs, slog.Uint64("cores", uint64(proc.NumCores)))
 		}
 		if proc.NumThreads > 0 {
-			groupAttrs = append(groupAttrs, slog.Int64("threads", int64(proc.NumThreads)))
+			groupAttrs = append(groupAttrs, slog.Uint64("threads", uint64(proc.NumThreads)))
 		}
 
 		// Skip Capabilities since it’s long & esoteric.
