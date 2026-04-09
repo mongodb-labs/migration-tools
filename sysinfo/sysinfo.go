@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"strings"
 
 	"github.com/jaypipes/ghw"
 	"github.com/jaypipes/ghw/pkg/cpu"
@@ -115,14 +116,20 @@ func getCPUAttrs(ctx context.Context) []slog.Attr {
 }
 
 func getMemoryAttrs(ctx context.Context) []slog.Attr {
-	var attrs []slog.Attr
-
 	ghwMem, err := ghw.Memory(ctx)
 	if err != nil {
-		// Memory() doesn’t work on macOS, so don’t bother
-		// logging the error here; instead just try another library.
-		return getSimpleMemoryAttrs(ctx)
+		attrs := getSimpleMemoryAttrs(ctx)
+
+		// NB: ghw.Memory() doesn’t support macOS as of this writing.
+
+		if !strings.Contains(err.Error(), "not implemented on") {
+			attrs = append(attrs, slog.Any("ghwErr", err))
+		}
+
+		return attrs
 	}
+
+	var attrs []slog.Attr
 
 	if ghwMem.TotalPhysicalBytes > 0 {
 		attrs = append(
