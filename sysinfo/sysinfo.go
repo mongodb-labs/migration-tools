@@ -126,6 +126,9 @@ func getMemoryAttrs(ctx context.Context) []slog.Attr {
 		attrs = append(attrs, slog.Any("pageSizes", pageSizes))
 	}
 
+	if len(attrs) == 0 {
+		return getSimpleMemoryAttrs(ctx)
+	}
 	return attrs
 }
 
