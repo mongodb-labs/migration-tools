@@ -14,11 +14,13 @@ type logfWriter struct {
 }
 
 func (w logfWriter) Write(p []byte) (n int, err error) {
-	w.t.Log(p)
+	w.t.Log(string(p))
 	return len(p), nil
 }
 
 func TestLogSystemInfo(t *testing.T) {
+	ctx := t.Context()
+
 	// Create a buffer to capture log output
 	var buf bytes.Buffer
 
@@ -30,17 +32,18 @@ func TestLogSystemInfo(t *testing.T) {
 	logger := slog.New(handler)
 
 	// Call the function
-	LogSystemInfo(logger)
+	LogSystemInfo(ctx, logger)
 
 	// Assert the buffer contains expected content
 	output := buf.String()
 
 	expectedFields := []string{
 		"System info",
-		"cpus",
 		"gomaxprocs",
 		"gomemlimit",
-		"totalRAM",
+		"cpu.totalCores",
+		"cpu.totalThreads",
+		"memory.",
 	}
 
 	for _, field := range expectedFields {
