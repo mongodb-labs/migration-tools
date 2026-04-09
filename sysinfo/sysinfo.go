@@ -134,7 +134,7 @@ func getSimpleMemoryAttrs(ctx context.Context) []slog.Attr {
 
 	vmem, err := mem.VirtualMemoryWithContext(ctx)
 	if err != nil {
-		attrs = append(attrs, slog.Any("err", err))
+		attrs = append(attrs, slog.Any("gopsutilErr", err))
 	} else {
 		if vmem.Total > 0 {
 			attrs = append(attrs, slog.String("total", humantools.FmtBytes(vmem.Total)))
