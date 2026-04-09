@@ -42,6 +42,8 @@ func TestLogSystemInfo(t *testing.T) {
 		"gomaxprocs",
 		"gomemlimit",
 		"cpu.totalCores",
+		"cpu.totalThreads",
+		"memory.",
 	}
 
 	for _, field := range expectedFields {
