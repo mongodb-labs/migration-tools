@@ -1,7 +1,6 @@
 package timetools
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -22,13 +21,13 @@ const (
 // ToDuration multiplies the given count & duration, with proper handling
 // of numeric types. Returns an error on overflow.
 func ToDuration[T realNumber](count T, unit time.Duration) (time.Duration, error) {
+	if unit <= 0 {
+		return 0, fmt.Errorf("invalid time unit (%s): must be positive", unit)
+	}
+
 	countAsDuration, err := safecast.Convert[time.Duration](count)
 	if err != nil {
 		return 0, fmt.Errorf("cannot convert count %v to %T: %w", count, time.Duration(0), err)
-	}
-
-	if unit <= 0 {
-		return 0, fmt.Errorf("invalid time unit (%s): must be positive", unit)
 	}
 
 	// If the count is an integer value, then just convert to a Duration.
@@ -39,11 +38,6 @@ func ToDuration[T realNumber](count T, unit time.Duration) (time.Duration, error
 
 	// The count is a float, which takes a different workflow.
 	result := float64(count) * float64(unit)
-
-	// Check for NaN or Inf—these can't be meaningfully converted to a duration
-	if math.IsNaN(result) || math.IsInf(result, 0) {
-		return 0, errors.New("overflow: duration multiplication produces infinity or NaN")
-	}
 
 	if result < float64(minDuration) {
 		return 0, fmt.Errorf("float underflow: %v * %s", count, unit)

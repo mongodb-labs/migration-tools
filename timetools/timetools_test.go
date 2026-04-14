@@ -171,6 +171,8 @@ func TestToDurationEdgeCases(t *testing.T) {
 				result, err := ToDuration(count, tt.unit)
 				require.NoError(t, err, "should not overflow")
 				assert.Equal(t, tt.expected, result)
+			default:
+				t.Fatalf("bad count type: %T", count)
 			}
 		})
 	}
@@ -462,6 +464,106 @@ func TestToDurationFloatBoundary(t *testing.T) {
 				assert.Error(t, err, "should detect overflow/underflow")
 			} else {
 				assert.NoError(t, err, "should convert without error")
+			}
+		})
+	}
+}
+
+// TestToDurationFloatMultiplicationOverflow tests non-integer floats that overflow/underflow
+// during the multiplication step (float64(count) * float64(unit) exceeds int64 bounds).
+func TestToDurationFloatMultiplicationOverflow(t *testing.T) {
+	tests := []struct {
+		name        string
+		count       float64
+		unit        time.Duration
+		expectError bool
+	}{
+		// Positive overflow: non-integer float that exceeds MaxInt64 when multiplied
+		// 9.5e18 * 1ns = 9.5e18 (way beyond MaxInt64 = 9.223e18)
+		{
+			name:        "fractional float positive overflow: 9.5e18 * 1ns",
+			count:       9.5e18,
+			unit:        time.Duration(1),
+			expectError: true,
+		},
+		// 5.2e9 * 1h: 5.2e9 * 3.6e12 = 1.872e22 (way beyond MaxInt64)
+		{
+			name:        "fractional float positive overflow: 5.2e9 * 1h",
+			count:       5.2e9,
+			unit:        time.Hour,
+			expectError: true,
+		},
+		// 1.5e15 * 10ms: 1.5e15 * 1e7 = 1.5e22 (way beyond MaxInt64)
+		{
+			name:        "fractional float positive overflow: 1.5e15 * 10ms",
+			count:       1.5e15,
+			unit:        10 * time.Millisecond,
+			expectError: true,
+		},
+
+		// Negative underflow: non-integer negative float that goes below MinInt64
+		// -9.5e18 * 1ns = -9.5e18 (below MinInt64 = -9.223e18)
+		{
+			name:        "fractional float negative underflow: -9.5e18 * 1ns",
+			count:       -9.5e18,
+			unit:        time.Duration(1),
+			expectError: true,
+		},
+		// -5.2e9 * 1h: -5.2e9 * 3.6e12 = -1.872e22
+		{
+			name:        "fractional float negative underflow: -5.2e9 * 1h",
+			count:       -5.2e9,
+			unit:        time.Hour,
+			expectError: true,
+		},
+		// -1.5e15 * 10ms: -1.5e15 * 1e7 = -1.5e22
+		{
+			name:        "fractional float negative underflow: -1.5e15 * 10ms",
+			count:       -1.5e15,
+			unit:        10 * time.Millisecond,
+			expectError: true,
+		},
+
+		// Just within bounds: non-integer floats that stay within int64 range
+		{
+			name:        "fractional float within bounds: 9e18 * 1ns",
+			count:       9e18,
+			unit:        time.Duration(1),
+			expectError: false,
+		},
+		{
+			name:        "fractional float within bounds: -9e18 * 1ns",
+			count:       -9e18,
+			unit:        time.Duration(1),
+			expectError: false,
+		},
+		{
+			name:        "fractional float within bounds: 1.5 * 1s",
+			count:       1.5,
+			unit:        time.Second,
+			expectError: false,
+		},
+		{
+			name:        "fractional float within bounds: 3.7e15 * 1ns",
+			count:       3.7e15,
+			unit:        time.Duration(1),
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ToDuration(tt.count, tt.unit)
+			if tt.expectError {
+				require.Error(t, err, "should detect float multiplication overflow/underflow")
+				// Should report float overflow or underflow
+				errMsg := err.Error()
+				hasOverflowMsg := (strings.Contains(errMsg, "overflow") ||
+					strings.Contains(errMsg, "underflow") ||
+					strings.Contains(errMsg, "conversion issue"))
+				assert.True(t, hasOverflowMsg, "error should report overflow/underflow: %s", errMsg)
+			} else {
+				require.NoError(t, err, "fractional float within bounds should not overflow")
 			}
 		})
 	}
