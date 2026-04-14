@@ -24,7 +24,7 @@ const (
 func ToDuration[T timeNumber](count T, unit time.Duration) (time.Duration, error) {
 	countAsDuration, err := safecast.Convert[time.Duration](count)
 	if err != nil {
-		return 0, fmt.Errorf("%v cannot be %T: %w", count, time.Duration(0), err)
+		return 0, fmt.Errorf("cannot convert count %v to %T: %w", count, time.Duration(0), err)
 	}
 
 	if unit <= 0 {
