@@ -45,8 +45,12 @@ func ToDuration[T timeNumber](count T, unit time.Duration) (time.Duration, error
 		return 0, errors.New("overflow: duration multiplication produces infinity or NaN")
 	}
 
-	// Let float precision handle the rest; Go's type conversion will handle values
-	// at the boundaries naturally
+	if result < float64(minDuration) {
+		return 0, fmt.Errorf("float underflow: %v * %s", count, unit)
+	}
+	if result > float64(maxDuration) {
+		return 0, fmt.Errorf("float overflow: %v * %s", count, unit)
+	}
 	return time.Duration(result), nil
 }
 
