@@ -2,6 +2,7 @@ package timetools
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,6 +116,8 @@ func TestToDurationWithIntegers(t *testing.T) {
 				result, err = ToDuration(count, tt.unit)
 			case int32:
 				result, err = ToDuration(count, tt.unit)
+			default:
+				t.Fatalf("bad count type: %T", count)
 			}
 
 			require.NoError(t, err, "should not overflow")
@@ -305,6 +308,58 @@ func TestToDurationInvalidUnit(t *testing.T) {
 	}
 }
 
+// TestToDurationUint64Overflow tests that large uint64 values are caught.
+func TestToDurationUint64Overflow(t *testing.T) {
+	tests := []struct {
+		name        string
+		count       uint64
+		unit        time.Duration
+		expectError bool
+	}{
+		{
+			name:        "uint64(MaxInt64) * 1ns: fits",
+			count:       uint64(math.MaxInt64),
+			unit:        time.Nanosecond,
+			expectError: false,
+		},
+		{
+			name:        "uint64(MaxInt64+1) * 1ns: overflows",
+			count:       uint64(math.MaxInt64) + 1,
+			unit:        time.Nanosecond,
+			expectError: true,
+		},
+		{
+			name:        "uint64(MaxUint64) * 1ns: massively overflows",
+			count:       math.MaxUint64,
+			unit:        time.Nanosecond,
+			expectError: true,
+		},
+		{
+			name:        "uint64(1e18) * 1μs: overflows",
+			count:       uint64(1e18),
+			unit:        time.Microsecond,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ToDuration(tt.count, tt.unit)
+			if tt.expectError {
+				require.Error(t, err, "should detect overflow for high uint64")
+				// Errors can be either "conversion issue" (from safecast for out-of-range uint64)
+				// or "integer overflow" (from multiplication check for in-range uint64)
+				errMsg := err.Error()
+				hasOverflowMsg := (strings.Contains(errMsg, "conversion issue") ||
+					strings.Contains(errMsg, "overflow"))
+				assert.True(t, hasOverflowMsg, "error should report overflow or conversion issue")
+			} else {
+				require.NoError(t, err, "uint64 within int64 range should not overflow")
+			}
+		})
+	}
+}
+
 // TestToDurationFloatInvalid tests that invalid float values are rejected.
 func TestToDurationFloatInvalid(t *testing.T) {
 	tests := []struct {
@@ -346,4 +401,68 @@ func TestToDurationFloatPrecision(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, time.Duration(1.5*float64(time.Second)), result)
 	})
+}
+
+// TestToDurationFloatBoundary tests float values at and beyond int64 boundaries.
+func TestToDurationFloatBoundary(t *testing.T) {
+	tests := []struct {
+		name        string
+		count       float64
+		unit        time.Duration
+		expectError bool
+	}{
+		{
+			name:        "float near MaxInt64: 9e18",
+			count:       9e18,
+			unit:        time.Duration(1),
+			expectError: false, // Float precision lets this convert naturally
+		},
+		{
+			name:        "float exceeding MaxInt64: 1e19",
+			count:       1e19,
+			unit:        time.Duration(1),
+			expectError: true, // Exceeds MaxInt64
+		},
+		{
+			name:        "large integer float with unit multiplier: 1e15 * 1h",
+			count:       1e15, // Exact integer, takes integer path
+			unit:        time.Hour,
+			expectError: true, // 1e15 * 3.6e12 overflows
+		},
+		{
+			name:        "negative float near MinInt64: -9e18",
+			count:       -9e18,
+			unit:        time.Duration(1),
+			expectError: false,
+		},
+		{
+			name:        "very small positive float: underflows to 0",
+			count:       1e-100,
+			unit:        time.Nanosecond,
+			expectError: false, // Underflows to 0, which is valid
+		},
+		{
+			name:        "very small negative float: underflows to 0",
+			count:       -1e-100,
+			unit:        time.Nanosecond,
+			expectError: true, // Exceeds minimum boundary
+		},
+		{
+			name:        "fractional float well within range",
+			count:       1.5e10,
+			unit:        time.Microsecond,
+			expectError: false, // Clearly within bounds
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ToDuration(tt.count, tt.unit)
+			if tt.expectError {
+				assert.Error(t, err, "should detect overflow/underflow")
+			} else {
+				assert.NoError(t, err, "should convert without error")
+			}
+		})
+	}
 }

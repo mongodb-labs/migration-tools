@@ -10,7 +10,7 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-type timeNumber interface {
+type realNumber interface {
 	constraints.Integer | constraints.Float
 }
 
@@ -21,7 +21,7 @@ const (
 
 // ToDuration multiplies the given count & duration, with proper handling
 // of numeric types. Returns an error on overflow.
-func ToDuration[T timeNumber](count T, unit time.Duration) (time.Duration, error) {
+func ToDuration[T realNumber](count T, unit time.Duration) (time.Duration, error) {
 	countAsDuration, err := safecast.Convert[time.Duration](count)
 	if err != nil {
 		return 0, fmt.Errorf("cannot convert count %v to %T: %w", count, time.Duration(0), err)
