@@ -1,6 +1,7 @@
 package ringbuf
 
 import (
+	"runtime"
 	"sync/atomic"
 	"testing"
 
@@ -166,6 +167,7 @@ func (s *ringbufTestSuite) TestConcurrentLenReads() {
 					return
 				default:
 					_ = r.Len() // Read concurrently, should not race
+					runtime.Gosched()
 				}
 			}
 		}()
@@ -200,6 +202,7 @@ func (s *ringbufTestSuite) TestConcurrentCapReads() {
 					if r.Cap() == 42 {
 						capCounter.Add(1)
 					}
+					runtime.Gosched()
 				}
 			}
 		}()
