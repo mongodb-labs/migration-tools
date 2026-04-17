@@ -1,6 +1,7 @@
 package synctools
 
 import (
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -240,6 +241,7 @@ func (s *boundedChanTestSuite) TestConcurrentStatsReads() {
 						snap.BufferedBytes >= 0 && snap.BufferedBytes <= snap.MaxBytes {
 						statsCounter.Add(1)
 					}
+					runtime.Gosched()
 				}
 			}
 		}()
