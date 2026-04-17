@@ -1,8 +1,10 @@
 package ringbuf
 
 import (
+	"runtime"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -90,14 +92,14 @@ func (s *ringbufTestSuite) TestMultipleWraps() {
 
 func (s *ringbufTestSuite) TestEmptyPanicPeek() {
 	r := New[int](1)
-	s.Assert().PanicsWithValue("ringbuf: peek on empty buffer", func() {
+	s.Assert().PanicsWithValue("assertion failed: peek needs nonempty buffer", func() {
 		r.Peek()
 	})
 }
 
 func (s *ringbufTestSuite) TestEmptyPanicPop() {
 	r := New[int](1)
-	s.Assert().PanicsWithValue("ringbuf: pop on empty buffer", func() {
+	s.Assert().PanicsWithValue("assertion failed: pop needs nonempty buffer", func() {
 		r.Pop()
 	})
 }
@@ -106,7 +108,7 @@ func (s *ringbufTestSuite) TestFullPanicPush() {
 	r := New[int](2)
 	r.Push(1)
 	r.Push(2)
-	s.Assert().PanicsWithValue("ringbuf: push on full buffer", func() {
+	s.Assert().PanicsWithValue("assertion failed: buffer must be non-full", func() {
 		r.Push(3)
 	})
 }
@@ -200,6 +202,7 @@ func (s *ringbufTestSuite) TestConcurrentCapReads() {
 					if r.Cap() == 42 {
 						capCounter.Add(1)
 					}
+					runtime.Gosched()
 				}
 			}
 		}()
@@ -210,6 +213,7 @@ func (s *ringbufTestSuite) TestConcurrentCapReads() {
 		r.Push(i)
 	}
 
+	time.Sleep(10 * time.Millisecond)
 	close(done)
 
 	// Verify concurrent reads actually executed

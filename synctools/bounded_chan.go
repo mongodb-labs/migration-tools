@@ -1,7 +1,6 @@
 package synctools
 
 import (
-	"math"
 	"sync/atomic"
 
 	"github.com/mongodb-labs/migration-tools/ringbuf"
@@ -29,19 +28,13 @@ type BoundedChanStats struct {
 //
 // This panics if either maxCount or maxTotalSize is nonpositive.
 func NewBoundedChan[T any](
-	maxCount int64,
+	maxCount int,
 	maxTotalSize int64,
 	size func(T) int64,
 ) (<-chan T, chan<- T, func() BoundedChanStats) {
 	lo.Assertf(
 		maxCount > 0,
 		"maxCount (%d) must be positive",
-		maxCount,
-	)
-
-	lo.Assertf(
-		maxCount <= int64(math.MaxInt),
-		"maxCount (%d) must fit in int",
 		maxCount,
 	)
 
@@ -57,7 +50,7 @@ func NewBoundedChan[T any](
 	w := &boundedChanWorker[T]{
 		in:       in,
 		out:      out,
-		buf:      ringbuf.New[T](int(maxCount)),
+		buf:      ringbuf.New[T](maxCount),
 		size:     size,
 		maxCount: maxCount,
 		maxMem:   maxTotalSize,
@@ -69,7 +62,7 @@ func NewBoundedChan[T any](
 		return BoundedChanStats{
 			BufferedItems: int64(w.buf.Len()),
 			BufferedBytes: w.curMem.Load(),
-			MaxItems:      maxCount,
+			MaxItems:      int64(maxCount),
 			MaxBytes:      maxTotalSize,
 		}
 	}
@@ -83,15 +76,19 @@ type boundedChanWorker[T any] struct {
 	buf      *ringbuf.RingBuf[T]
 	curMem   atomic.Int64 // atomic for lock-free stats queries
 	size     func(T) int64
-	maxCount int64
+	maxCount int
 	maxMem   int64
 }
 
 func (w *boundedChanWorker[T]) itemSize(item T) int64 {
 	size := w.size(item)
-	if size < 0 {
-		panic("synctools: bounded channel item size must be non-negative")
-	}
+
+	lo.Assertf(
+		size >= 0,
+		"bounded channel item size (%d) must be nonnegative",
+		size,
+	)
+
 	return size
 }
 
@@ -154,7 +151,7 @@ func (w *boundedChanWorker[T]) flushRemaining() {
 }
 
 func (w *boundedChanWorker[T]) drainExcess() bool {
-	for w.buf.Len() > 0 && (int64(w.buf.Len()) >= w.maxCount || w.curMem.Load() >= w.maxMem) {
+	for w.buf.Len() > 0 && (int64(w.buf.Len()) >= int64(w.maxCount) || w.curMem.Load() >= w.maxMem) {
 		item := w.buf.Peek()
 		w.out <- item
 		w.curMem.Add(-w.itemSize(item))

@@ -33,7 +33,7 @@ func (s *boundedChanTestSuite) TestBasicSendReceive() {
 }
 
 func (s *boundedChanTestSuite) TestCountLimitEnforced() {
-	maxCount := int64(3)
+	maxCount := 3
 	out, in, _ := NewBoundedChan(maxCount, 10000, func(i int) int64 { return 1 })
 
 	// Send maxCount + 1 items in a goroutine to avoid deadlock

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \":*)",
+      "Bash(python3:*)",
+      "Bash(go test:*)",
+      "Bash(go build:*)",
+      "Bash(go doc:*)",
+      "Bash(go mod:*)",
+      "Bash(cat)",
+      "Read(//tmp/**)"
+    ]
+  }
+}
