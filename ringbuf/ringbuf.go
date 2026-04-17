@@ -17,7 +17,8 @@ type RingBuf[T any] struct {
 }
 
 // New allocates a RingBuf with the given fixed capacity.
-// This is the only allocation; subsequent operations are zero-copy.
+// It allocates the fixed backing storage up front; subsequent buffer
+// operations do not grow the buffer or allocate additional backing storage.
 func New[T any](capacity int) *RingBuf[T] {
 	if capacity <= 0 {
 		panic("ringbuf: capacity must be > 0")

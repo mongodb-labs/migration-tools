@@ -168,6 +168,7 @@ func (s *ringbufTestSuite) TestConcurrentLenReads() {
 					return
 				default:
 					_ = r.Len() // Read concurrently, should not race
+					runtime.Gosched()
 				}
 			}
 		}()
