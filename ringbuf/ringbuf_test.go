@@ -137,7 +137,7 @@ func (s *ringbufTestSuite) TestPointerTypes() {
 
 func (s *ringbufTestSuite) TestZeroValuesReleased() {
 	// After Pop(), the slot should be zeroed so that pointers are released for GC.
-	// We test this by pushing, popping, then verifying the internal slot is zero.
+	// Since this test is in package ringbuf, it can directly inspect the internal buffer.
 	r := New[*int](1)
 	val := new(int)
 	*val = 42
@@ -148,12 +148,8 @@ func (s *ringbufTestSuite) TestZeroValuesReleased() {
 	r.Pop()
 	s.Assert().Equal(0, r.Len())
 
-	// The slot should now be nil (zero value for *int)
-	// We verify indirectly by pushing a new value and seeing it goes to the same slot.
-	newVal := new(int)
-	*newVal = 99
-	r.Push(newVal)
-	s.Assert().Equal(newVal, r.Peek())
+	// The only slot in a capacity-1 buffer must be reset to the zero value after Pop().
+	s.Assert().Nil(r.buf[0], "popped slot should be zeroed to release pointers for GC")
 }
 
 func (s *ringbufTestSuite) TestConcurrentLenReads() {
