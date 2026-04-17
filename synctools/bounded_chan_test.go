@@ -63,9 +63,9 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 
 	// Send items in goroutine to avoid deadlock
 	go func() {
-		// Send items that total > maxMem
-		// The sum is 85, which is under 100, so all should be buffered
-		// Then send one that pushes us over (10, 20, 30, 25, 20 = 105)
+		// The first four items total 85, which is under maxMem, so they should
+		// all be buffered. The fifth item pushes the total to 105, exceeding
+		// maxMem (10, 20, 30, 25, 20 = 105).
 		itemsToSend := []int{10, 20, 30, 25, 20}
 		for _, item := range itemsToSend {
 			in <- item
