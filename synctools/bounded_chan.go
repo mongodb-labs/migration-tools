@@ -7,6 +7,13 @@ import (
 	"github.com/samber/lo"
 )
 
+// bufferedItem pairs an item with its precomputed size.
+// Size is computed once on receipt and reused on drain to ensure curMem invariants.
+type bufferedItem[T any] struct {
+	item T
+	size int64
+}
+
 // BoundedChanStats holds snapshot statistics about a BoundedChan’s internal state.
 type BoundedChanStats struct {
 	BufferedItems int64 // Number of items currently buffered
@@ -50,7 +57,7 @@ func NewBoundedChan[T any](
 	w := &boundedChanWorker[T]{
 		in:       in,
 		out:      out,
-		buf:      ringbuf.New[T](maxCount),
+		buf:      ringbuf.New[bufferedItem[T]](maxCount),
 		size:     size,
 		maxCount: maxCount,
 		maxMem:   maxTotalSize,
@@ -73,7 +80,7 @@ func NewBoundedChan[T any](
 type boundedChanWorker[T any] struct {
 	in       <-chan T
 	out      chan<- T
-	buf      *ringbuf.RingBuf[T]
+	buf      *ringbuf.RingBuf[bufferedItem[T]]
 	curMem   atomic.Int64 // atomic for lock-free stats queries
 	size     func(T) int64
 	maxCount int
@@ -90,6 +97,20 @@ func (w *boundedChanWorker[T]) itemSize(item T) int64 {
 	)
 
 	return size
+}
+
+// push computes size once and stores it with the item.
+func (w *boundedChanWorker[T]) push(item T) {
+	sz := w.itemSize(item)
+	w.buf.Push(bufferedItem[T]{item: item, size: sz})
+	w.curMem.Add(sz)
+}
+
+// pop removes the next item from the buffer and updates curMem using the precomputed size.
+func (w *boundedChanWorker[T]) pop() {
+	entry := w.buf.Peek()
+	w.curMem.Add(-entry.size)
+	w.buf.Pop()
 }
 
 func (w *boundedChanWorker[T]) run() {
@@ -118,44 +139,38 @@ func (w *boundedChanWorker[T]) receiveItem() bool {
 	if !ok {
 		return false
 	}
-	w.buf.Push(item)
-	w.curMem.Add(w.itemSize(item))
+	w.push(item)
 	return true
 }
 
 func (w *boundedChanWorker[T]) receiveOrSend() bool {
-	item := w.buf.Peek()
 	select {
-	case item, ok := <-w.in:
+	case itemIn, ok := <-w.in:
 		if !ok {
 			w.flushRemaining()
 			return false
 		}
-		w.buf.Push(item)
-		w.curMem.Add(w.itemSize(item))
+		w.push(itemIn)
 		return true
-	case w.out <- item:
-		w.curMem.Add(-w.itemSize(item))
-		w.buf.Pop()
+	case w.out <- w.buf.Peek().item:
+		w.pop()
 		return true
 	}
 }
 
 func (w *boundedChanWorker[T]) flushRemaining() {
 	for w.buf.Len() > 0 {
-		item := w.buf.Peek()
-		w.out <- item
-		w.curMem.Add(-w.itemSize(item))
-		w.buf.Pop()
+		entry := w.buf.Peek()
+		w.out <- entry.item
+		w.pop()
 	}
 }
 
 func (w *boundedChanWorker[T]) drainExcess() bool {
 	for w.buf.Len() > 0 && (int64(w.buf.Len()) >= int64(w.maxCount) || w.curMem.Load() >= w.maxMem) {
-		item := w.buf.Peek()
-		w.out <- item
-		w.curMem.Add(-w.itemSize(item))
-		w.buf.Pop()
+		entry := w.buf.Peek()
+		w.out <- entry.item
+		w.pop()
 	}
 	return true
 }
