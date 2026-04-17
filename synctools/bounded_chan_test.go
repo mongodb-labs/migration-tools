@@ -297,3 +297,38 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 	s.Assert().Equal(int64(0), snap.BufferedItems)
 	s.Assert().Equal(int64(0), snap.BufferedBytes)
 }
+
+func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
+	// Verify that size is computed once on receipt and reused on drain.
+	// This test would fail if size() were called multiple times and returned different values.
+	// We use a size function that returns a random int64 to simulate a mutable-state scenario.
+	var rng uint64 = 12345 // seed
+	sizeFunc := func(item int) int64 {
+		// Linear congruential generator for pseudo-random sizes
+		rng = rng*1103515245 + 12345
+		return int64((rng / 65536) % 100) // 0-99
+	}
+
+	out, in, stats := NewBoundedChan(10, 1000, sizeFunc)
+
+	// Send items
+	go func() {
+		for i := range 10 {
+			in <- i
+		}
+		close(in)
+	}()
+
+	// Receive all items
+	received := 0
+	for range out {
+		received++
+	}
+
+	s.Assert().Equal(10, received)
+
+	// Verify final stats: no items buffered, no bytes buffered
+	snap := stats()
+	s.Assert().Equal(int64(0), snap.BufferedItems, "all items should be drained")
+	s.Assert().Equal(int64(0), snap.BufferedBytes, "all bytes should be accounted for (curMem should be 0)")
+}
