@@ -87,6 +87,14 @@ type boundedChanWorker[T any] struct {
 	maxMem   int64
 }
 
+func (w *boundedChanWorker[T]) itemSize(item T) int64 {
+	size := w.size(item)
+	if size < 0 {
+		panic("synctools: bounded channel item size must be non-negative")
+	}
+	return size
+}
+
 func (w *boundedChanWorker[T]) run() {
 	defer close(w.out)
 
@@ -114,7 +122,7 @@ func (w *boundedChanWorker[T]) receiveItem() bool {
 		return false
 	}
 	w.buf.Push(item)
-	w.curMem.Add(w.size(item))
+	w.curMem.Add(w.itemSize(item))
 	return true
 }
 
@@ -127,10 +135,10 @@ func (w *boundedChanWorker[T]) receiveOrSend() bool {
 			return false
 		}
 		w.buf.Push(item)
-		w.curMem.Add(w.size(item))
+		w.curMem.Add(w.itemSize(item))
 		return true
 	case w.out <- item:
-		w.curMem.Add(-w.size(item))
+		w.curMem.Add(-w.itemSize(item))
 		w.buf.Pop()
 		return true
 	}
@@ -140,7 +148,7 @@ func (w *boundedChanWorker[T]) flushRemaining() {
 	for w.buf.Len() > 0 {
 		item := w.buf.Peek()
 		w.out <- item
-		w.curMem.Add(-w.size(item))
+		w.curMem.Add(-w.itemSize(item))
 		w.buf.Pop()
 	}
 }
@@ -149,7 +157,7 @@ func (w *boundedChanWorker[T]) drainExcess() bool {
 	for w.buf.Len() > 0 && (int64(w.buf.Len()) >= w.maxCount || w.curMem.Load() >= w.maxMem) {
 		item := w.buf.Peek()
 		w.out <- item
-		w.curMem.Add(-w.size(item))
+		w.curMem.Add(-w.itemSize(item))
 		w.buf.Pop()
 	}
 	return true
