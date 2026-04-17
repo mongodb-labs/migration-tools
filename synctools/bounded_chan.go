@@ -1,6 +1,7 @@
 package synctools
 
 import (
+	"math"
 	"sync/atomic"
 
 	"github.com/mongodb-labs/migration-tools/ringbuf"
@@ -35,6 +36,12 @@ func NewBoundedChan[T any](
 	lo.Assertf(
 		maxCount > 0,
 		"maxCount (%d) must be positive",
+		maxCount,
+	)
+
+	lo.Assertf(
+		maxCount <= int64(math.MaxInt),
+		"maxCount (%d) must fit in int",
 		maxCount,
 	)
 
