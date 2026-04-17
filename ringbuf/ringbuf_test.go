@@ -1,6 +1,7 @@
 package ringbuf
 
 import (
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -16,28 +17,28 @@ func TestRingBufTestSuite(t *testing.T) {
 
 func (s *ringbufTestSuite) TestBasicPushPop() {
 	r := New[int](3)
-	s.Equal(0, r.Len())
-	s.Equal(3, r.Cap())
+	s.Assert().Equal(0, r.Len())
+	s.Assert().Equal(3, r.Cap())
 
 	r.Push(10)
-	s.Equal(1, r.Len())
-	s.Equal(10, r.Peek())
+	s.Assert().Equal(1, r.Len())
+	s.Assert().Equal(10, r.Peek())
 
 	r.Push(20)
 	r.Push(30)
-	s.Equal(3, r.Len())
+	s.Assert().Equal(3, r.Len())
 
-	s.Equal(10, r.Peek())
+	s.Assert().Equal(10, r.Peek())
 	r.Pop()
-	s.Equal(2, r.Len())
+	s.Assert().Equal(2, r.Len())
 
-	s.Equal(20, r.Peek())
+	s.Assert().Equal(20, r.Peek())
 	r.Pop()
-	s.Equal(1, r.Len())
+	s.Assert().Equal(1, r.Len())
 
-	s.Equal(30, r.Peek())
+	s.Assert().Equal(30, r.Peek())
 	r.Pop()
-	s.Equal(0, r.Len())
+	s.Assert().Equal(0, r.Len())
 }
 
 func (s *ringbufTestSuite) TestWrapAround() {
@@ -47,24 +48,24 @@ func (s *ringbufTestSuite) TestWrapAround() {
 	r.Push(10)
 	r.Push(20)
 	r.Push(30)
-	s.Equal(3, r.Len())
+	s.Assert().Equal(3, r.Len())
 
 	// Pop one: [_, 20, 30], head advances
 	r.Pop()
-	s.Equal(2, r.Len())
+	s.Assert().Equal(2, r.Len())
 
 	// Push one, wrapping: [40, 20, 30], tail wraps around
 	r.Push(40)
-	s.Equal(3, r.Len())
+	s.Assert().Equal(3, r.Len())
 
 	// Items should come out in order
-	s.Equal(20, r.Peek())
+	s.Assert().Equal(20, r.Peek())
 	r.Pop()
-	s.Equal(30, r.Peek())
+	s.Assert().Equal(30, r.Peek())
 	r.Pop()
-	s.Equal(40, r.Peek())
+	s.Assert().Equal(40, r.Peek())
 	r.Pop()
-	s.Equal(0, r.Len())
+	s.Assert().Equal(0, r.Len())
 }
 
 func (s *ringbufTestSuite) TestMultipleWraps() {
@@ -73,30 +74,30 @@ func (s *ringbufTestSuite) TestMultipleWraps() {
 	// Cycle: [1, 2] -> pop -> push 3 -> pop -> push 4, etc.
 	r.Push(1)
 	r.Push(2)
-	s.Equal(2, r.Len())
+	s.Assert().Equal(2, r.Len())
 
 	r.Pop() // head wraps from 0->1
-	s.Equal(1, r.Len())
+	s.Assert().Equal(1, r.Len())
 
 	r.Push(3) // tail wraps from 1->0
-	s.Equal(2, r.Len())
-	s.Equal(2, r.Peek())
+	s.Assert().Equal(2, r.Len())
+	s.Assert().Equal(2, r.Peek())
 
 	r.Pop() // head wraps from 1->0
 	r.Pop() // head wraps from 0->1
-	s.Equal(0, r.Len())
+	s.Assert().Equal(0, r.Len())
 }
 
 func (s *ringbufTestSuite) TestEmptyPanicPeek() {
 	r := New[int](1)
-	s.PanicsWithValue("ringbuf: peek on empty buffer", func() {
+	s.Assert().PanicsWithValue("ringbuf: peek on empty buffer", func() {
 		r.Peek()
 	})
 }
 
 func (s *ringbufTestSuite) TestEmptyPanicPop() {
 	r := New[int](1)
-	s.PanicsWithValue("ringbuf: pop on empty buffer", func() {
+	s.Assert().PanicsWithValue("ringbuf: pop on empty buffer", func() {
 		r.Pop()
 	})
 }
@@ -105,7 +106,7 @@ func (s *ringbufTestSuite) TestFullPanicPush() {
 	r := New[int](2)
 	r.Push(1)
 	r.Push(2)
-	s.PanicsWithValue("ringbuf: push on full buffer", func() {
+	s.Assert().PanicsWithValue("ringbuf: push on full buffer", func() {
 		r.Push(3)
 	})
 }
@@ -120,13 +121,13 @@ func (s *ringbufTestSuite) TestPointerTypes() {
 	r.Push(obj1)
 	r.Push(obj2)
 
-	s.Equal(obj1, r.Peek())
+	s.Assert().Equal(obj1, r.Peek())
 	r.Pop()
 
-	s.Equal(obj2, r.Peek())
+	s.Assert().Equal(obj2, r.Peek())
 	r.Pop()
 
-	s.Equal(0, r.Len())
+	s.Assert().Equal(0, r.Len())
 }
 
 func (s *ringbufTestSuite) TestZeroValuesReleased() {
@@ -137,17 +138,17 @@ func (s *ringbufTestSuite) TestZeroValuesReleased() {
 	*val = 42
 
 	r.Push(val)
-	s.Equal(val, r.Peek())
+	s.Assert().Equal(val, r.Peek())
 
 	r.Pop()
-	s.Equal(0, r.Len())
+	s.Assert().Equal(0, r.Len())
 
 	// The slot should now be nil (zero value for *int)
 	// We verify indirectly by pushing a new value and seeing it goes to the same slot.
 	newVal := new(int)
 	*newVal = 99
 	r.Push(newVal)
-	s.Equal(newVal, r.Peek())
+	s.Assert().Equal(newVal, r.Peek())
 }
 
 func (s *ringbufTestSuite) TestConcurrentLenReads() {
@@ -157,27 +158,27 @@ func (s *ringbufTestSuite) TestConcurrentLenReads() {
 
 	// Start goroutines constantly reading Len()
 	done := make(chan struct{})
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			for {
 				select {
 				case <-done:
 					return
 				default:
-					_ = r.Len()  // Read concurrently, should not race
+					_ = r.Len() // Read concurrently, should not race
 				}
 			}
 		}()
 	}
 
 	// Main thread pushes and pops
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		r.Push(i)
-		s.Equal(i+1, r.Len())
+		s.Assert().Equal(i+1, r.Len())
 	}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		r.Pop()
-		s.Equal(100-i-1, r.Len())
+		s.Assert().Equal(100-i-1, r.Len())
 	}
 
 	close(done)
@@ -188,23 +189,29 @@ func (s *ringbufTestSuite) TestConcurrentCapReads() {
 	r := New[int](42)
 
 	done := make(chan struct{})
-	for i := 0; i < 5; i++ {
+	var capCounter atomic.Int32
+	for range 5 {
 		go func() {
 			for {
 				select {
 				case <-done:
 					return
 				default:
-					s.Equal(42, r.Cap())  // Read concurrently
+					if r.Cap() == 42 {
+						capCounter.Add(1)
+					}
 				}
 			}
 		}()
 	}
 
 	// Do some operations
-	for i := 0; i < 42; i++ {
+	for i := range 42 {
 		r.Push(i)
 	}
 
 	close(done)
+
+	// Verify concurrent reads actually executed
+	s.Positive(capCounter.Load(), "cap reader should have executed")
 }

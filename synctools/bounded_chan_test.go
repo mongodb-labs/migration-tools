@@ -27,7 +27,7 @@ func (s *boundedChanTestSuite) TestBasicSendReceive() {
 	// Receive them back
 	for i := range 5 {
 		val := <-out
-		s.Equal(i, val)
+		s.Assert().Equal(i, val)
 	}
 }
 
@@ -50,10 +50,10 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 		items = append(items, item)
 	}
 
-	s.Equal(int(maxCount)+1, len(items))
+	s.Len(items, int(maxCount)+1)
 	// Verify items came in order
-	for i := 0; i < len(items); i++ {
-		s.Equal(i, items[i])
+	for i := range len(items) {
+		s.Assert().Equal(i, items[i])
 	}
 }
 
@@ -80,8 +80,8 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	}
 
 	// All items should come through in order
-	s.Equal(5, len(items))
-	s.Equal(10, items[0])
+	s.Len(items, 5)
+	s.Assert().Equal(10, items[0])
 }
 
 func (s *boundedChanTestSuite) TestInputChannelClosed() {
@@ -99,7 +99,7 @@ func (s *boundedChanTestSuite) TestInputChannelClosed() {
 		items = append(items, item)
 	}
 
-	s.Equal([]int{1, 2, 3}, items)
+	s.Assert().Equal([]int{1, 2, 3}, items)
 }
 
 func (s *boundedChanTestSuite) TestLargeMemoryItems() {
@@ -118,15 +118,15 @@ func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 
 	// First item should come out
 	val := <-out
-	s.Equal(50, len(val))
+	s.Len(val, 50)
 
 	// Get the second
 	val2 := <-out
-	s.Equal(60, len(val2))
+	s.Len(val2, 60)
 
 	// Channel should close
 	_, ok := <-out
-	s.False(ok)
+	s.Assert().False(ok)
 }
 
 func (s *boundedChanTestSuite) TestManySmallItems() {
@@ -143,11 +143,11 @@ func (s *boundedChanTestSuite) TestManySmallItems() {
 	// Receive all items in order
 	received := 0
 	for item := range out {
-		s.Equal(received, item)
+		s.Assert().Equal(received, item)
 		received++
 	}
 
-	s.Equal(100, received)
+	s.Assert().Equal(100, received)
 }
 
 func (s *boundedChanTestSuite) TestEmptyBuffer() {
@@ -156,14 +156,14 @@ func (s *boundedChanTestSuite) TestEmptyBuffer() {
 	// Send and receive immediately
 	in <- 42
 	val := <-out
-	s.Equal(42, val)
+	s.Assert().Equal(42, val)
 
 	// Close channel
 	close(in)
 
 	// Output should close
 	_, ok := <-out
-	s.False(ok)
+	s.Assert().False(ok)
 }
 
 func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
@@ -192,7 +192,7 @@ func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
 	}
 
 	// All 5 items should come through
-	s.Equal(5, len(items))
+	s.Len(items, 5)
 }
 
 func (s *boundedChanTestSuite) TestZeroItemEdgeCases() {
@@ -216,7 +216,7 @@ func (s *boundedChanTestSuite) TestZeroItemEdgeCases() {
 		received++
 	}
 
-	s.Equal(100, received)
+	s.Assert().Equal(100, received)
 }
 
 func (s *boundedChanTestSuite) TestConcurrentStatsReads() {
@@ -227,7 +227,7 @@ func (s *boundedChanTestSuite) TestConcurrentStatsReads() {
 	// Start goroutines constantly reading stats
 	done := make(chan struct{})
 	var statsCounter atomic.Int64
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		go func() {
 			for {
 				select {
@@ -259,11 +259,11 @@ func (s *boundedChanTestSuite) TestConcurrentStatsReads() {
 		received++
 	}
 
-	s.Equal(100, received)
+	s.Assert().Equal(100, received)
 	close(done)
 
 	// Verify stats readers actually ran and saw valid snapshots
-	s.True(statsCounter.Load() > 0, "stats reader should have executed and seen valid data")
+	s.Positive(statsCounter.Load(), "stats reader should have executed and seen valid data")
 }
 
 func (s *boundedChanTestSuite) TestStatsAccuracy() {
@@ -281,10 +281,10 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 
 	snap := stats()
 	// Items may have been partially drained, so just verify ranges
-	s.True(snap.BufferedItems >= 0)
-	s.True(snap.BufferedBytes >= 0)
-	s.Equal(int64(5), snap.MaxItems)
-	s.Equal(int64(1000), snap.MaxBytes)
+	s.GreaterOrEqual(snap.BufferedItems, 0)
+	s.GreaterOrEqual(snap.BufferedBytes, 0)
+	s.Assert().Equal(int64(5), snap.MaxItems)
+	s.Assert().Equal(int64(1000), snap.MaxBytes)
 
 	// Close and drain remaining
 	close(in)
@@ -292,6 +292,6 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 	}
 
 	snap = stats()
-	s.Equal(int64(0), snap.BufferedItems)
-	s.Equal(int64(0), snap.BufferedBytes)
+	s.Assert().Equal(int64(0), snap.BufferedItems)
+	s.Assert().Equal(int64(0), snap.BufferedBytes)
 }
