@@ -123,6 +123,30 @@ func (s *boundedChanTestSuite) TestInputChannelClosed() {
 	s.Assert().Equal([]int{1, 2, 3}, items)
 }
 
+func (s *boundedChanTestSuite) TestOversizedItem() {
+	// A single item larger than maxMem should still pass through.
+	// The memory limit is temporarily exceeded, then restored after drain.
+	out, in, stats := NewBoundedChan(10, 50, func(i int) int64 { return int64(i) })
+
+	go func() {
+		in <- 200
+		in <- 200
+		in <- 200
+		close(in)
+	}()
+
+	items := []int{}
+	for item := range out {
+		items = append(items, item)
+	}
+
+	s.Assert().Equal([]int{200, 200, 200}, items)
+
+	snap := stats()
+	s.Assert().Zero(snap.BufferedItems)
+	s.Assert().Equal(int64(0), snap.BufferedBytes)
+}
+
 func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 	maxMem := int64(100)
 	out, in, _ := NewBoundedChan(100, maxMem, func(b []byte) int64 { return int64(len(b)) })
