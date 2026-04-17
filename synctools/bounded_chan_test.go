@@ -281,8 +281,8 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 
 	snap := stats()
 	// Items may have been partially drained, so just verify ranges
-	s.GreaterOrEqual(snap.BufferedItems, 0)
-	s.GreaterOrEqual(snap.BufferedBytes, 0)
+	s.GreaterOrEqual(snap.BufferedItems, int64(0))
+	s.GreaterOrEqual(snap.BufferedBytes, int64(0))
 	s.Assert().Equal(int64(5), snap.MaxItems)
 	s.Assert().Equal(int64(1000), snap.MaxBytes)
 
