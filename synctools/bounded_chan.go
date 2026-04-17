@@ -133,6 +133,8 @@ func (w *boundedChanWorker[T]) run() {
 	}
 }
 
+// Returns false to indicate that all work is done: the input channel
+// is closed, and the buffer is drained.
 func (w *boundedChanWorker[T]) processItems() bool {
 	if w.buf.Len() == 0 {
 		return w.receiveItem()
@@ -140,6 +142,7 @@ func (w *boundedChanWorker[T]) processItems() bool {
 	return w.receiveOrSend()
 }
 
+// Returns false to indicate that the input channel is closed.
 func (w *boundedChanWorker[T]) receiveItem() bool {
 	item, ok := <-w.in
 	if !ok {
@@ -149,6 +152,8 @@ func (w *boundedChanWorker[T]) receiveItem() bool {
 	return true
 }
 
+// Returns false to indicate that all work is done: the input channel
+// is closed, and the buffer is drained.
 func (w *boundedChanWorker[T]) receiveOrSend() bool {
 	// If at or over the count limit, must drain (send) before receiving more.
 	// This keeps the buffer within capacity without needing extra space.
