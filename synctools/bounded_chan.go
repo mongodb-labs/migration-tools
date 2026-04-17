@@ -67,7 +67,6 @@ func NewBoundedChan[T any](
 		buf:      ringbuf.New[bufferedItem[T]](maxCount),
 		size:     size,
 		maxCount: maxCount,
-		maxMem:   maxTotalSize,
 	}
 
 	go w.run()
@@ -91,7 +90,6 @@ type boundedChanWorker[T any] struct {
 	curMem   atomic.Int64 // atomic for lock-free stats queries
 	size     func(T) int64
 	maxCount int
-	maxMem   int64
 }
 
 func (w *boundedChanWorker[T]) itemSize(item T) int64 {
@@ -123,12 +121,7 @@ func (w *boundedChanWorker[T]) pop() {
 func (w *boundedChanWorker[T]) run() {
 	defer close(w.out)
 
-	for {
-		if !w.processItems() {
-			return
-		}
-
-		w.drainExcess()
+	for w.processItems() {
 	}
 }
 
@@ -151,23 +144,24 @@ func (w *boundedChanWorker[T]) receiveItem() bool {
 	return true
 }
 
-// Returns false to indicate that all work is done: the input channel
-// is closed, and the buffer is drained.
+// This returns a “there’s more to do” bool. IOW, if it returns false,
+// that means all work is done: the input channel is closed, and the
+// buffer is drained.
 func (w *boundedChanWorker[T]) receiveOrSend() bool {
-	// If at or over the count limit, must drain (send) before receiving more.
+	// If at the count limit, must drain (send) before receiving more.
 	// This keeps the buffer within capacity without needing extra space.
-	if w.buf.Len() >= w.maxCount {
-		return w.drainOne()
+	if w.buf.Len() == w.maxCount {
+		w.drainOne()
+		return true
 	}
+
 	return w.receiveOrSendNormal()
 }
 
-// drainOne sends one buffered item and returns true.
-func (w *boundedChanWorker[T]) drainOne() bool {
+func (w *boundedChanWorker[T]) drainOne() {
 	entry := w.buf.Peek()
 	w.out <- entry.item
 	w.pop()
-	return true
 }
 
 // receiveOrSendNormal handles the normal case when below the count limit.
@@ -182,6 +176,7 @@ func (w *boundedChanWorker[T]) receiveOrSendNormal() bool {
 }
 
 // handleReceive processes a received item or input close.
+// Its return indicates whether the receiver is still open.
 func (w *boundedChanWorker[T]) handleReceive(item T, ok bool) bool {
 	if !ok {
 		w.flushRemaining()
@@ -197,15 +192,4 @@ func (w *boundedChanWorker[T]) flushRemaining() {
 		w.out <- entry.item
 		w.pop()
 	}
-}
-
-func (w *boundedChanWorker[T]) drainExcess() {
-	for w.shouldDrain() {
-		w.drainOne()
-	}
-}
-
-// shouldDrain returns true if the buffer exceeds either limit.
-func (w *boundedChanWorker[T]) shouldDrain() bool {
-	return w.buf.Len() > 0 && (w.buf.Len() > w.maxCount || w.curMem.Load() > w.maxMem)
 }
