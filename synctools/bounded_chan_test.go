@@ -4,7 +4,6 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -272,19 +271,16 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 	// Verify stats reflect actual buffer state at snapshot time.
 	out, in, stats := NewBoundedChan(5, 1000, func(i int) int64 { return int64(i) })
 
-	// Send 3 items: size 1, 2, 3 = 6 total
+	// Send 3 items: size 1, 2, 3 = 6 total.
+	// Because out is not being read yet, once these sends complete the worker
+	// cannot drain buffered items any further, so the snapshot is deterministic.
 	in <- 1
 	in <- 2
 	in <- 3
 
-	// Give a brief moment for items to be buffered
-	// (without this, they might already be drained to out channel)
-	time.Sleep(10 * time.Millisecond)
-
 	snap := stats()
-	// Items may have been partially drained, so just verify ranges
-	s.GreaterOrEqual(snap.BufferedItems, int64(0))
-	s.GreaterOrEqual(snap.BufferedBytes, int64(0))
+	s.Assert().Equal(int64(3), snap.BufferedItems)
+	s.Assert().Equal(int64(6), snap.BufferedBytes)
 	s.Assert().Equal(int64(5), snap.MaxItems)
 	s.Assert().Equal(int64(1000), snap.MaxBytes)
 
