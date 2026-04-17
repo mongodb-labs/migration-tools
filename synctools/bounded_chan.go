@@ -34,7 +34,8 @@ type BoundedChanStats struct {
 // NOTE: The returned channels are unbuffered and WILL NOT reflect current
 // usage. Use the returned stats function for lock-free stats queries.
 //
-// This panics if either maxCount or maxTotalSize is nonpositive.
+// This panics if maxCount or maxTotalSize is nonpositive, if size is nil, or
+// if size returns a negative value for any item.
 func NewBoundedChan[T any](
 	maxCount int,
 	maxTotalSize int64,
