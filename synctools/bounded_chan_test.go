@@ -43,7 +43,8 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 
 	select {
 	case item := <-out:
-		s.Failf("unexpected drain at exact count limit", "received item %v after sending exactly maxCount items", item)
+		s.Assert().
+			Failf("unexpected drain at exact count limit", "received item %v after sending exactly maxCount items", item)
 	case <-time.After(10 * time.Millisecond):
 	}
 
@@ -78,7 +79,8 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 
 	select {
 	case item := <-out:
-		s.Failf("unexpected drain at exact memory limit", "received item %v after reaching exactly maxMem bytes", item)
+		s.Assert().
+			Failf("unexpected drain at exact memory limit", "received item %v after reaching exactly maxMem bytes", item)
 	case <-time.After(10 * time.Millisecond):
 	}
 
