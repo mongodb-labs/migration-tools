@@ -223,48 +223,65 @@ func (s *boundedChanTestSuite) TestConcurrentStatsReads() {
 	// This tests atomic-safe access to both ringbuf.Len() and curMem.
 	out, in, stats := NewBoundedChan(10, 1000, func(i int) int64 { return int64(i) })
 
-	// Start goroutines constantly reading stats
 	done := make(chan struct{})
-	var statsCounter atomic.Int64
-	for range 5 {
-		go func() {
-			for {
-				select {
-				case <-done:
-					return
-				default:
-					snap := stats()
-					// Just verify we can read safely; values will be stale snapshots
-					if snap.BufferedItems >= 0 && snap.BufferedItems <= snap.MaxItems &&
-						snap.BufferedBytes >= 0 && snap.BufferedBytes <= snap.MaxBytes {
-						statsCounter.Add(1)
-					}
-					runtime.Gosched()
-				}
-			}
-		}()
-	}
+	statsCounter := startStatsReaders(stats, done)
+	produceItems(in)
+	received := consumeItems(out)
+	s.Assert().Equal(100, received)
 
-	// Producer: send items
+	close(done)
+	s.Assert().
+		Positive(statsCounter.Load(), "stats reader should have executed and seen valid data")
+}
+
+// startStatsReaders launches multiple goroutines that concurrently read stats.
+func startStatsReaders(stats func() BoundedChanStats, done chan struct{}) *atomic.Int64 {
+	statsCounter := &atomic.Int64{}
+	for range 5 {
+		go statsReaderLoop(stats, done, statsCounter)
+	}
+	return statsCounter
+}
+
+// statsReaderLoop continuously reads stats until done is closed.
+func statsReaderLoop(stats func() BoundedChanStats, done chan struct{}, counter *atomic.Int64) {
+	for {
+		select {
+		case <-done:
+			return
+		default:
+			snap := stats()
+			if isValidSnapshot(snap) {
+				counter.Add(1)
+			}
+			runtime.Gosched()
+		}
+	}
+}
+
+// isValidSnapshot verifies that a stats snapshot is within expected bounds.
+func isValidSnapshot(snap BoundedChanStats) bool {
+	return snap.BufferedItems >= 0 && snap.BufferedItems <= snap.MaxItems &&
+		snap.BufferedBytes >= 0 && snap.BufferedBytes <= snap.MaxBytes
+}
+
+// produceItems sends 100 items to the channel then closes it.
+func produceItems(in chan<- int) {
 	go func() {
 		for i := 1; i <= 100; i++ {
 			in <- i
 		}
 		close(in)
 	}()
+}
 
-	// Consumer: receive items
+// consumeItems receives all items from the channel and returns the count.
+func consumeItems(out <-chan int) int {
 	received := 0
 	for range out {
 		received++
 	}
-
-	s.Assert().Equal(100, received)
-	close(done)
-
-	// Verify stats readers actually ran and saw valid snapshots
-	s.Assert().
-		Positive(statsCounter.Load(), "stats reader should have executed and seen valid data")
+	return received
 }
 
 func (s *boundedChanTestSuite) TestStatsAccuracy() {
@@ -330,69 +347,72 @@ func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 		Equal(int64(0), snap.BufferedBytes, "all bytes should be accounted for (curMem should be 0)")
 }
 
-func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
-	// Verify that limits are inclusive: we can buffer up to (and including) maxCount items
-	// and up to (and including) maxMem bytes without automatic draining.
+// pollStats polls until the given predicate is true, checking stats repeatedly.
+func pollStats(stats func() BoundedChanStats, predicate func(BoundedChanStats) bool) BoundedChanStats {
+	var snap BoundedChanStats
+	for range 100 {
+		snap = stats()
+		if predicate(snap) {
+			break
+		}
+		runtime.Gosched()
+	}
+	return snap
+}
 
-	// Test count limit inclusivity: maxCount=3 should allow exactly 3 items buffered
+func (s *boundedChanTestSuite) TestCountBoundIsInclusive() {
+	// Verify that maxCount limit is inclusive: we can buffer exactly maxCount items without draining.
 	out, in, stats := NewBoundedChan(3, 1000, func(int) int64 { return 1 })
 
+	sentDone := make(chan struct{})
 	go func() {
 		// Send exactly 3 items; they should all stay buffered (not drained)
 		in <- 1
 		in <- 2
 		in <- 3
-		// Don't close yet; keep the channel open to prevent flushing
+		// Signal that sending is complete; goroutine exits immediately after
+		close(sentDone)
 	}()
 
-	// Poll until items are buffered (without reading from out)
-	var snap BoundedChanStats
-	for range 100 {
-		snap = stats()
-		if snap.BufferedItems == 3 {
-			break
-		}
-		runtime.Gosched()
-	}
+	// Poll until items are buffered or we know sending is done
+	snap := pollStats(stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
 	s.Assert().Equal(3, snap.BufferedItems, "should be able to buffer exactly maxCount items")
 
-	// Now close and drain
+	// Wait for sending to complete, then close input and drain
+	<-sentDone
 	close(in)
 	for range out {
 	}
 
 	snap = stats()
 	s.Assert().Zero(snap.BufferedItems)
+}
 
-	// Test memory limit inclusivity: maxMem=60 should allow exactly 60 bytes buffered
-	out2, in2, stats2 := NewBoundedChan(100, 60, func(i int) int64 { return int64(i) })
+func (s *boundedChanTestSuite) TestMemoryBoundIsInclusive() {
+	// Verify that maxMem limit is inclusive: we can buffer exactly maxMem bytes without draining.
+	out, in, stats := NewBoundedChan(100, 60, func(i int) int64 { return int64(i) })
 
+	sentDone := make(chan struct{})
 	go func() {
 		// Send items: 10, 20, 30 = 60 bytes total; should stay buffered
-		in2 <- 10
-		in2 <- 20
-		in2 <- 30
-		// Don't close; keep open to prevent flushing
+		in <- 10
+		in <- 20
+		in <- 30
+		// Signal that sending is complete; goroutine exits immediately after
+		close(sentDone)
 	}()
 
-	// Poll until items are buffered
-	var snap2 BoundedChanStats
-	for range 100 {
-		snap2 = stats2()
-		if snap2.BufferedItems == 3 {
-			break
-		}
-		runtime.Gosched()
-	}
-	s.Assert().Equal(3, snap2.BufferedItems, "should have 3 items")
-	s.Assert().
-		Equal(int64(60), snap2.BufferedBytes, "should be able to buffer exactly maxMem bytes")
+	// Poll until items are buffered or we know sending is done
+	snap := pollStats(stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
+	s.Assert().Equal(3, snap.BufferedItems, "should have 3 items")
+	s.Assert().Equal(int64(60), snap.BufferedBytes, "should be able to buffer exactly maxMem bytes")
 
-	// Now close and drain
-	close(in2)
-	for range out2 {
+	// Wait for sending to complete, then close input and drain
+	<-sentDone
+	close(in)
+	for range out {
 	}
 
-	snap2 = stats2()
-	s.Assert().Equal(int64(0), snap2.BufferedBytes)
+	snap = stats()
+	s.Assert().Equal(int64(0), snap.BufferedBytes)
 }

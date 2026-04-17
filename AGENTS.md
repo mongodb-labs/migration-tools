@@ -10,3 +10,5 @@ rule ST1011 forbids unit-specific suffixes on `time.Duration` variables (e.g. na
 `remaining`, not `remainingSec`).
 
 Avoid unused parameters. Use `_` to satisfy type definitions where necessary.
+
+Follow all linter settings, especially cyclomatic complexity limitations, when writing code.
