@@ -51,6 +51,11 @@ func NewBoundedChan[T any](
 		maxTotalSize,
 	)
 
+	lo.Assertf(
+		size != nil,
+		"size must not be nil",
+	)
+
 	in := make(chan T)
 	out := make(chan T)
 
