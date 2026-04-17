@@ -158,24 +158,38 @@ func (w *boundedChanWorker[T]) receiveOrSend() bool {
 	// If at or over the count limit, must drain (send) before receiving more.
 	// This keeps the buffer within capacity without needing extra space.
 	if w.buf.Len() >= w.maxCount {
-		entry := w.buf.Peek()
-		w.out <- entry.item
-		w.pop()
-		return true
+		return w.drainOne()
 	}
+	return w.receiveOrSendNormal()
+}
 
+// drainOne sends one buffered item and returns true.
+func (w *boundedChanWorker[T]) drainOne() bool {
+	entry := w.buf.Peek()
+	w.out <- entry.item
+	w.pop()
+	return true
+}
+
+// receiveOrSendNormal handles the normal case when below the count limit.
+func (w *boundedChanWorker[T]) receiveOrSendNormal() bool {
 	select {
 	case itemIn, ok := <-w.in:
-		if !ok {
-			w.flushRemaining()
-			return false
-		}
-		w.push(itemIn)
-		return true
+		return w.handleReceive(itemIn, ok)
 	case w.out <- w.buf.Peek().item:
 		w.pop()
 		return true
 	}
+}
+
+// handleReceive processes a received item or input close.
+func (w *boundedChanWorker[T]) handleReceive(item T, ok bool) bool {
+	if !ok {
+		w.flushRemaining()
+		return false
+	}
+	w.push(item)
+	return true
 }
 
 func (w *boundedChanWorker[T]) flushRemaining() {
@@ -187,10 +201,13 @@ func (w *boundedChanWorker[T]) flushRemaining() {
 }
 
 func (w *boundedChanWorker[T]) drainExcess() bool {
-	for w.buf.Len() > 0 && (w.buf.Len() > w.maxCount || w.curMem.Load() > w.maxMem) {
-		entry := w.buf.Peek()
-		w.out <- entry.item
-		w.pop()
+	for w.shouldDrain() {
+		w.drainOne()
 	}
 	return true
+}
+
+// shouldDrain returns true if the buffer exceeds either limit.
+func (w *boundedChanWorker[T]) shouldDrain() bool {
+	return w.buf.Len() > 0 && (w.buf.Len() > w.maxCount || w.curMem.Load() > w.maxMem)
 }

@@ -8,3 +8,5 @@ formatting.
 Comply with all linting rules enforced by the tools in `precious.toml`. For example, the staticcheck
 rule ST1011 forbids unit-specific suffixes on `time.Duration` variables (e.g. name a `time.Duration`
 `remaining`, not `remainingSec`).
+
+Avoid unused parameters. Use `_` to satisfy type definitions where necessary.

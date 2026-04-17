@@ -18,7 +18,7 @@ func TestBoundedChanTestSuite(t *testing.T) {
 }
 
 func (s *boundedChanTestSuite) TestBasicSendReceive() {
-	out, in, _ := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(10, 1000, func(int) int64 { return 1 })
 
 	// Send a few items
 	for i := range 5 {
@@ -34,12 +34,12 @@ func (s *boundedChanTestSuite) TestBasicSendReceive() {
 
 func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 	maxCount := 3
-	out, in, _ := NewBoundedChan(maxCount, 10000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(maxCount, 10000, func(int) int64 { return 1 })
 
 	// Send maxCount + 1 items in a goroutine to avoid deadlock
 	go func() {
 		for i := range maxCount + 1 {
-			in <- int(i)
+			in <- i
 		}
 		close(in)
 	}()
@@ -51,7 +51,7 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 		items = append(items, item)
 	}
 
-	s.Assert().Len(items, int(maxCount)+1)
+	s.Assert().Len(items, maxCount+1)
 	// Verify items came in order
 	for i := range items {
 		s.Assert().Equal(i, items[i])
@@ -86,7 +86,7 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 }
 
 func (s *boundedChanTestSuite) TestInputChannelClosed() {
-	out, in, _ := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(10, 1000, func(int) int64 { return 1 })
 
 	// Send some items and close
 	in <- 1
@@ -131,7 +131,7 @@ func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 }
 
 func (s *boundedChanTestSuite) TestManySmallItems() {
-	out, in, _ := NewBoundedChan(5, 10000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(5, 10000, func(int) int64 { return 1 })
 
 	// Send 100 items through the channel
 	go func() {
@@ -152,7 +152,7 @@ func (s *boundedChanTestSuite) TestManySmallItems() {
 }
 
 func (s *boundedChanTestSuite) TestEmptyBuffer() {
-	out, in, _ := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(10, 1000, func(int) int64 { return 1 })
 
 	// Send and receive immediately
 	in <- 42
@@ -197,7 +197,7 @@ func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
 }
 
 func (s *boundedChanTestSuite) TestZeroItemEdgeCases() {
-	out, in, _ := NewBoundedChan(10, 1000, func(i int) int64 {
+	out, in, _ := NewBoundedChan(10, 1000, func(int) int64 {
 		// Return 0 for size
 		return 0
 	})
@@ -337,7 +337,7 @@ func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
 	// and up to (and including) maxMem bytes without automatic draining.
 
 	// Test count limit inclusivity: maxCount=3 should allow exactly 3 items buffered
-	out, in, stats := NewBoundedChan(3, 1000, func(i int) int64 { return 1 })
+	out, in, stats := NewBoundedChan(3, 1000, func(int) int64 { return 1 })
 
 	go func() {
 		// Send exactly 3 items; they should all stay buffered (not drained)
