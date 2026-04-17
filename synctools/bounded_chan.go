@@ -127,9 +127,7 @@ func (w *boundedChanWorker[T]) run() {
 			return
 		}
 
-		if !w.drainExcess() {
-			return
-		}
+		w.drainExcess()
 	}
 }
 
@@ -200,11 +198,10 @@ func (w *boundedChanWorker[T]) flushRemaining() {
 	}
 }
 
-func (w *boundedChanWorker[T]) drainExcess() bool {
+func (w *boundedChanWorker[T]) drainExcess() {
 	for w.shouldDrain() {
 		w.drainOne()
 	}
-	return true
 }
 
 // shouldDrain returns true if the buffer exceeds either limit.

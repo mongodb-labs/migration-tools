@@ -12,3 +12,5 @@ rule ST1011 forbids unit-specific suffixes on `time.Duration` variables (e.g. na
 Avoid unused parameters. Use `_` to satisfy type definitions where necessary.
 
 Follow all linter settings, especially cyclomatic complexity limitations, when writing code.
+
+When writing tests, use require.Eventually to ensure empirically that a required condition is met. Never just write a time.Sleep() and assume that the condition will be met after that duration.

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -214,7 +215,15 @@ func (s *ringbufTestSuite) TestConcurrentCapReads() {
 		r.Push(i)
 	}
 
-	time.Sleep(10 * time.Millisecond)
+	require.Eventually(
+		s.T(),
+		func() bool {
+			return capCounter.Load() > 0
+		},
+		time.Minute,
+		time.Millisecond,
+	)
+
 	close(done)
 
 	// Verify concurrent reads actually executed

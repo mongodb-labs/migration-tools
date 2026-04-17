@@ -4,7 +4,9 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -348,15 +350,23 @@ func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 }
 
 // pollStats polls until the given predicate is true, checking stats repeatedly.
-func pollStats(stats func() BoundedChanStats, predicate func(BoundedChanStats) bool) BoundedChanStats {
+func pollStats(
+	t *testing.T,
+	stats func() BoundedChanStats,
+	predicate func(BoundedChanStats) bool,
+) BoundedChanStats {
 	var snap BoundedChanStats
-	for range 100 {
-		snap = stats()
-		if predicate(snap) {
-			break
-		}
-		runtime.Gosched()
-	}
+
+	require.Eventually(
+		t,
+		func() bool {
+			snap = stats()
+			return predicate(snap)
+		},
+		time.Minute,
+		time.Millisecond,
+	)
+
 	return snap
 }
 
@@ -375,7 +385,7 @@ func (s *boundedChanTestSuite) TestCountBoundIsInclusive() {
 	}()
 
 	// Poll until items are buffered or we know sending is done
-	snap := pollStats(stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
+	snap := pollStats(s.T(), stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
 	s.Assert().Equal(3, snap.BufferedItems, "should be able to buffer exactly maxCount items")
 
 	// Wait for sending to complete, then close input and drain
@@ -403,7 +413,7 @@ func (s *boundedChanTestSuite) TestMemoryBoundIsInclusive() {
 	}()
 
 	// Poll until items are buffered or we know sending is done
-	snap := pollStats(stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
+	snap := pollStats(s.T(), stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
 	s.Assert().Equal(3, snap.BufferedItems, "should have 3 items")
 	s.Assert().Equal(int64(60), snap.BufferedBytes, "should be able to buffer exactly maxMem bytes")
 
