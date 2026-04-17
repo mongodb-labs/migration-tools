@@ -59,7 +59,7 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 }
 
 func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
-	maxMem := int64(100)
+	const maxMem = 100
 	out, in, _ := NewBoundedChan(1000, maxMem, func(i int) int64 { return int64(i) })
 
 	// Send items in goroutine to avoid deadlock
