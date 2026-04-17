@@ -112,6 +112,7 @@ func (w *boundedChanWorker[T]) receiveItem() bool {
 }
 
 func (w *boundedChanWorker[T]) receiveOrSend() bool {
+	item := w.buf.Peek()
 	select {
 	case item, ok := <-w.in:
 		if !ok {
@@ -121,8 +122,8 @@ func (w *boundedChanWorker[T]) receiveOrSend() bool {
 		w.buf.Push(item)
 		w.curMem.Add(w.size(item))
 		return true
-	case w.out <- w.buf.Peek():
-		w.curMem.Add(-w.size(w.buf.Peek()))
+	case w.out <- item:
+		w.curMem.Add(-w.size(item))
 		w.buf.Pop()
 		return true
 	}
