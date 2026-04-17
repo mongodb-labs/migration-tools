@@ -115,19 +115,21 @@ func (s *ringbufTestSuite) TestFullPanicPush() {
 }
 
 func (s *ringbufTestSuite) TestPointerTypes() {
-	type Obj struct{ val int }
+	type obj struct {
+		val int
+	}
 
-	r := New[*Obj](2)
-	obj1 := &Obj{val: 100}
-	obj2 := &Obj{val: 200}
+	r := New[*obj](2)
+	obj1 := &obj{val: 100}
+	obj2 := &obj{val: 200}
 
 	r.Push(obj1)
 	r.Push(obj2)
 
-	s.Assert().Equal(obj1, r.Peek())
+	s.Assert().Equal(obj1.val, r.Peek().val)
 	r.Pop()
 
-	s.Assert().Equal(obj2, r.Peek())
+	s.Assert().Equal(obj2.val, r.Peek().val)
 	r.Pop()
 
 	s.Assert().Equal(0, r.Len())
