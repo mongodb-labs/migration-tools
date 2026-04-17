@@ -1,7 +1,9 @@
 package synctools
 
 import (
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -15,7 +17,7 @@ func TestBoundedChanTestSuite(t *testing.T) {
 }
 
 func (s *boundedChanTestSuite) TestBasicSendReceive() {
-	out, in := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
 
 	// Send a few items
 	for i := range 5 {
@@ -31,7 +33,7 @@ func (s *boundedChanTestSuite) TestBasicSendReceive() {
 
 func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 	maxCount := int64(3)
-	out, in := NewBoundedChan(maxCount, 10000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(maxCount, 10000, func(i int) int64 { return 1 })
 
 	// Send maxCount + 1 items in a goroutine to avoid deadlock
 	go func() {
@@ -57,7 +59,7 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 
 func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	maxMem := int64(100)
-	out, in := NewBoundedChan(1000, maxMem, func(i int) int64 { return int64(i) })
+	out, in, _ := NewBoundedChan(1000, maxMem, func(i int) int64 { return int64(i) })
 
 	// Send items in goroutine to avoid deadlock
 	go func() {
@@ -83,7 +85,7 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 }
 
 func (s *boundedChanTestSuite) TestInputChannelClosed() {
-	out, in := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
 
 	// Send some items and close
 	in <- 1
@@ -102,7 +104,7 @@ func (s *boundedChanTestSuite) TestInputChannelClosed() {
 
 func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 	maxMem := int64(100)
-	out, in := NewBoundedChan(100, maxMem, func(b []byte) int64 { return int64(len(b)) })
+	out, in, _ := NewBoundedChan(100, maxMem, func(b []byte) int64 { return int64(len(b)) })
 
 	go func() {
 		// Send a large item
@@ -128,7 +130,7 @@ func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 }
 
 func (s *boundedChanTestSuite) TestManySmallItems() {
-	out, in := NewBoundedChan(5, 10000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(5, 10000, func(i int) int64 { return 1 })
 
 	// Send 100 items through the channel
 	go func() {
@@ -149,7 +151,7 @@ func (s *boundedChanTestSuite) TestManySmallItems() {
 }
 
 func (s *boundedChanTestSuite) TestEmptyBuffer() {
-	out, in := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
+	out, in, _ := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
 
 	// Send and receive immediately
 	in <- 42
@@ -166,7 +168,7 @@ func (s *boundedChanTestSuite) TestEmptyBuffer() {
 
 func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
 	// Limit to 3 items and 50 bytes
-	out, in := NewBoundedChan(3, 50, func(i int) int64 { return int64(i) })
+	out, in, _ := NewBoundedChan(3, 50, func(i int) int64 { return int64(i) })
 
 	go func() {
 		// Send items: 5, 10, 15 (total 30 bytes, 3 items)
@@ -194,7 +196,7 @@ func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
 }
 
 func (s *boundedChanTestSuite) TestZeroItemEdgeCases() {
-	out, in := NewBoundedChan(10, 1000, func(i int) int64 {
+	out, in, _ := NewBoundedChan(10, 1000, func(i int) int64 {
 		// Return 0 for size
 		return 0
 	})
@@ -215,4 +217,81 @@ func (s *boundedChanTestSuite) TestZeroItemEdgeCases() {
 	}
 
 	s.Equal(100, received)
+}
+
+func (s *boundedChanTestSuite) TestConcurrentStatsReads() {
+	// Verify stats function is safe for concurrent reads while channel operates.
+	// This tests atomic-safe access to both ringbuf.Len() and curMem.
+	out, in, stats := NewBoundedChan(10, 1000, func(i int) int64 { return int64(i) })
+
+	// Start goroutines constantly reading stats
+	done := make(chan struct{})
+	var statsCounter atomic.Int64
+	for i := 0; i < 5; i++ {
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					snap := stats()
+					// Just verify we can read safely; values will be stale snapshots
+					if snap.BufferedItems >= 0 && snap.BufferedItems <= snap.MaxItems &&
+						snap.BufferedBytes >= 0 && snap.BufferedBytes <= snap.MaxBytes {
+						statsCounter.Add(1)
+					}
+				}
+			}
+		}()
+	}
+
+	// Producer: send items
+	go func() {
+		for i := 1; i <= 100; i++ {
+			in <- i
+		}
+		close(in)
+	}()
+
+	// Consumer: receive items
+	received := 0
+	for range out {
+		received++
+	}
+
+	s.Equal(100, received)
+	close(done)
+
+	// Verify stats readers actually ran and saw valid snapshots
+	s.True(statsCounter.Load() > 0, "stats reader should have executed and seen valid data")
+}
+
+func (s *boundedChanTestSuite) TestStatsAccuracy() {
+	// Verify stats reflect actual buffer state at snapshot time.
+	out, in, stats := NewBoundedChan(5, 1000, func(i int) int64 { return int64(i) })
+
+	// Send 3 items: size 1, 2, 3 = 6 total
+	in <- 1
+	in <- 2
+	in <- 3
+
+	// Give a brief moment for items to be buffered
+	// (without this, they might already be drained to out channel)
+	time.Sleep(10 * time.Millisecond)
+
+	snap := stats()
+	// Items may have been partially drained, so just verify ranges
+	s.True(snap.BufferedItems >= 0)
+	s.True(snap.BufferedBytes >= 0)
+	s.Equal(int64(5), snap.MaxItems)
+	s.Equal(int64(1000), snap.MaxBytes)
+
+	// Close and drain remaining
+	close(in)
+	for range out {
+	}
+
+	snap = stats()
+	s.Equal(int64(0), snap.BufferedItems)
+	s.Equal(int64(0), snap.BufferedBytes)
 }

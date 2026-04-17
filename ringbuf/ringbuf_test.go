@@ -149,3 +149,62 @@ func (s *ringbufTestSuite) TestZeroValuesReleased() {
 	r.Push(newVal)
 	s.Equal(newVal, r.Peek())
 }
+
+func (s *ringbufTestSuite) TestConcurrentLenReads() {
+	// Verify Len() is safe for concurrent reads while single-threaded Push/Pop occurs.
+	// This tests the atomic.Int32 safety of the count field.
+	r := New[int](100)
+
+	// Start goroutines constantly reading Len()
+	done := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					_ = r.Len()  // Read concurrently, should not race
+				}
+			}
+		}()
+	}
+
+	// Main thread pushes and pops
+	for i := 0; i < 100; i++ {
+		r.Push(i)
+		s.Equal(i+1, r.Len())
+	}
+	for i := 0; i < 100; i++ {
+		r.Pop()
+		s.Equal(100-i-1, r.Len())
+	}
+
+	close(done)
+}
+
+func (s *ringbufTestSuite) TestConcurrentCapReads() {
+	// Verify Cap() is safe for concurrent reads (it's trivial but let's verify pattern).
+	r := New[int](42)
+
+	done := make(chan struct{})
+	for i := 0; i < 5; i++ {
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					s.Equal(42, r.Cap())  // Read concurrently
+				}
+			}
+		}()
+	}
+
+	// Do some operations
+	for i := 0; i < 42; i++ {
+		r.Push(i)
+	}
+
+	close(done)
+}

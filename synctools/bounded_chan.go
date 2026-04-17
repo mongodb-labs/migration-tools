@@ -1,20 +1,37 @@
 package synctools
 
 import (
+	"sync/atomic"
+
 	"github.com/mongodb-labs/migration-tools/ringbuf"
 	"github.com/samber/lo"
 )
 
-// NewBoundedChan creates channels with memory-bounded semantics: it enforces
-// limits both of count and aggregate size. Returns a read channel and write
-// channel, similar to io.Pipe(). The size function computes a single item’s size.
+// BoundedChanStats holds snapshot statistics about a BoundedChan’s internal state.
+type BoundedChanStats struct {
+	BufferedItems int64 // Number of items currently buffered
+	BufferedBytes int64 // Total bytes of buffered items
+	MaxItems      int64 // Maximum items allowed
+	MaxBytes      int64 // Maximum bytes allowed
+}
+
+// NewBoundedChan is like a plain channel but also lets you limit the amount of
+// memory to which the channel members refer. For example, instead of a plain
+// chan []byte, which limits only by len(chan), use NewBoundedChan to limit
+// both by len *and* the buffers’ total size.
 //
-// This panics if either maxCount or maxMem is nonpositive.
+// This returns separate read-from & write-to channels. (Similar to io.Pipe(),
+// but with channels). The size function computes a single item’s size.
+//
+// NOTE: The returned channels are unbuffered and WILL NOT reflect current
+// usage. Use the returned stats function for lock-free stats queries.
+//
+// This panics if either maxCount or maxTotalSize is nonpositive.
 func NewBoundedChan[T any](
 	maxCount int64,
-	maxMem int64,
+	maxTotalSize int64,
 	size func(T) int64,
-) (<-chan T, chan<- T) {
+) (<-chan T, chan<- T, func() BoundedChanStats) {
 	lo.Assertf(
 		maxCount > 0,
 		"maxCount (%d) must be positive",
@@ -22,9 +39,9 @@ func NewBoundedChan[T any](
 	)
 
 	lo.Assertf(
-		maxMem > 0,
+		maxTotalSize > 0,
 		"maxMem (%d) must be positive",
-		maxMem,
+		maxTotalSize,
 	)
 
 	in := make(chan T)
@@ -36,19 +53,28 @@ func NewBoundedChan[T any](
 		buf:      ringbuf.New[T](int(maxCount)),
 		size:     size,
 		maxCount: maxCount,
-		maxMem:   maxMem,
+		maxMem:   maxTotalSize,
 	}
 
 	go w.run()
 
-	return out, in
+	statsFn := func() BoundedChanStats {
+		return BoundedChanStats{
+			BufferedItems: int64(w.buf.Len()),
+			BufferedBytes: w.curMem.Load(),
+			MaxItems:      maxCount,
+			MaxBytes:      maxTotalSize,
+		}
+	}
+
+	return out, in, statsFn
 }
 
 type boundedChanWorker[T any] struct {
 	in       <-chan T
 	out      chan<- T
 	buf      *ringbuf.RingBuf[T]
-	curMem   int64
+	curMem   atomic.Int64 // atomic for lock-free stats queries
 	size     func(T) int64
 	maxCount int64
 	maxMem   int64
@@ -81,7 +107,7 @@ func (w *boundedChanWorker[T]) receiveItem() bool {
 		return false
 	}
 	w.buf.Push(item)
-	w.curMem += w.size(item)
+	w.curMem.Add(w.size(item))
 	return true
 }
 
@@ -93,10 +119,10 @@ func (w *boundedChanWorker[T]) receiveOrSend() bool {
 			return false
 		}
 		w.buf.Push(item)
-		w.curMem += w.size(item)
+		w.curMem.Add(w.size(item))
 		return true
 	case w.out <- w.buf.Peek():
-		w.curMem -= w.size(w.buf.Peek())
+		w.curMem.Add(-w.size(w.buf.Peek()))
 		w.buf.Pop()
 		return true
 	}
@@ -106,16 +132,16 @@ func (w *boundedChanWorker[T]) flushRemaining() {
 	for w.buf.Len() > 0 {
 		item := w.buf.Peek()
 		w.out <- item
-		w.curMem -= w.size(item)
+		w.curMem.Add(-w.size(item))
 		w.buf.Pop()
 	}
 }
 
 func (w *boundedChanWorker[T]) drainExcess() bool {
-	for w.buf.Len() > 0 && (int64(w.buf.Len()) >= w.maxCount || w.curMem >= w.maxMem) {
+	for w.buf.Len() > 0 && (int64(w.buf.Len()) >= w.maxCount || w.curMem.Load() >= w.maxMem) {
 		item := w.buf.Peek()
 		w.out <- item
-		w.curMem -= w.size(item)
+		w.curMem.Add(-w.size(item))
 		w.buf.Pop()
 	}
 	return true
