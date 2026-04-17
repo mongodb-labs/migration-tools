@@ -74,15 +74,14 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 		close(in)
 	}()
 
-	// Collect items and verify first one comes out
+	// Collect items and verify the full output sequence.
 	items := []int{}
 	for item := range out {
 		items = append(items, item)
 	}
 
-	// All items should come through in order
-	s.Assert().Len(items, 5)
-	s.Assert().Equal(10, items[0])
+	// All items should come through in order.
+	s.Assert().Equal([]int{10, 20, 30, 25, 20}, items)
 }
 
 func (s *boundedChanTestSuite) TestInputChannelClosed() {
