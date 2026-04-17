@@ -218,5 +218,5 @@ func (s *ringbufTestSuite) TestConcurrentCapReads() {
 	close(done)
 
 	// Verify concurrent reads actually executed
-	s.Positive(capCounter.Load(), "cap reader should have executed")
+	s.Assert().Positive(capCounter.Load(), "cap reader should have executed")
 }

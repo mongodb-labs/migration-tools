@@ -51,9 +51,9 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 		items = append(items, item)
 	}
 
-	s.Len(items, int(maxCount)+1)
+	s.Assert().Len(items, int(maxCount)+1)
 	// Verify items came in order
-	for i := range len(items) {
+	for i := range items {
 		s.Assert().Equal(i, items[i])
 	}
 }
@@ -81,7 +81,7 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	}
 
 	// All items should come through in order
-	s.Len(items, 5)
+	s.Assert().Len(items, 5)
 	s.Assert().Equal(10, items[0])
 }
 
@@ -119,11 +119,11 @@ func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 
 	// First item should come out
 	val := <-out
-	s.Len(val, 50)
+	s.Assert().Len(val, 50)
 
 	// Get the second
 	val2 := <-out
-	s.Len(val2, 60)
+	s.Assert().Len(val2, 60)
 
 	// Channel should close
 	_, ok := <-out
@@ -193,7 +193,7 @@ func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
 	}
 
 	// All 5 items should come through
-	s.Len(items, 5)
+	s.Assert().Len(items, 5)
 }
 
 func (s *boundedChanTestSuite) TestZeroItemEdgeCases() {
@@ -265,7 +265,8 @@ func (s *boundedChanTestSuite) TestConcurrentStatsReads() {
 	close(done)
 
 	// Verify stats readers actually ran and saw valid snapshots
-	s.Positive(statsCounter.Load(), "stats reader should have executed and seen valid data")
+	s.Assert().
+		Positive(statsCounter.Load(), "stats reader should have executed and seen valid data")
 }
 
 func (s *boundedChanTestSuite) TestStatsAccuracy() {
@@ -327,7 +328,8 @@ func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 	// Verify final stats: no items buffered, no bytes buffered
 	snap := stats()
 	s.Assert().Equal(0, snap.BufferedItems, "all items should be drained")
-	s.Assert().Equal(int64(0), snap.BufferedBytes, "all bytes should be accounted for (curMem should be 0)")
+	s.Assert().
+		Equal(int64(0), snap.BufferedBytes, "all bytes should be accounted for (curMem should be 0)")
 }
 
 func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
@@ -375,7 +377,8 @@ func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
 
 	snap2 := stats2()
 	s.Assert().Equal(3, snap2.BufferedItems, "should have 3 items")
-	s.Assert().Equal(int64(60), snap2.BufferedBytes, "should be able to buffer exactly maxMem bytes")
+	s.Assert().
+		Equal(int64(60), snap2.BufferedBytes, "should be able to buffer exactly maxMem bytes")
 
 	// Now close and drain
 	close(in2)
