@@ -4,7 +4,6 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -347,10 +346,15 @@ func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
 		// Don't close yet; keep the channel open to prevent flushing
 	}()
 
-	// Give worker time to buffer items but don't read from out yet
-	time.Sleep(50 * time.Millisecond)
-
-	snap := stats()
+	// Poll until items are buffered (without reading from out)
+	var snap BoundedChanStats
+	for range 100 {
+		snap = stats()
+		if snap.BufferedItems == 3 {
+			break
+		}
+		runtime.Gosched()
+	}
 	s.Assert().Equal(3, snap.BufferedItems, "should be able to buffer exactly maxCount items")
 
 	// Now close and drain
@@ -372,10 +376,15 @@ func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
 		// Don't close; keep open to prevent flushing
 	}()
 
-	// Give worker time to buffer
-	time.Sleep(50 * time.Millisecond)
-
-	snap2 := stats2()
+	// Poll until items are buffered
+	var snap2 BoundedChanStats
+	for range 100 {
+		snap2 = stats2()
+		if snap2.BufferedItems == 3 {
+			break
+		}
+		runtime.Gosched()
+	}
 	s.Assert().Equal(3, snap2.BufferedItems, "should have 3 items")
 	s.Assert().
 		Equal(int64(60), snap2.BufferedBytes, "should be able to buffer exactly maxMem bytes")
