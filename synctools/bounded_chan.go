@@ -40,7 +40,7 @@ func NewBoundedChan[T any](
 
 	lo.Assertf(
 		maxTotalSize > 0,
-		"maxMem (%d) must be positive",
+		"maxTotalSize (%d) must be positive",
 		maxTotalSize,
 	)
 
