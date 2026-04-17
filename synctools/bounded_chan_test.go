@@ -280,9 +280,9 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 	in <- 3
 
 	snap := stats()
-	s.Assert().Equal(int64(3), snap.BufferedItems)
+	s.Assert().Equal(3, snap.BufferedItems)
 	s.Assert().Equal(int64(6), snap.BufferedBytes)
-	s.Assert().Equal(int64(5), snap.MaxItems)
+	s.Assert().Equal(5, snap.MaxItems)
 	s.Assert().Equal(int64(1000), snap.MaxBytes)
 
 	// Close and drain remaining
@@ -291,7 +291,7 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 	}
 
 	snap = stats()
-	s.Assert().Equal(int64(0), snap.BufferedItems)
+	s.Assert().Zero(snap.BufferedItems)
 	s.Assert().Equal(int64(0), snap.BufferedBytes)
 }
 
@@ -300,7 +300,7 @@ func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 	// This test would fail if size() were called multiple times and returned different values.
 	// We use a size function that returns a random int64 to simulate a mutable-state scenario.
 	var rng uint64 = 12345 // seed
-	sizeFunc := func(item int) int64 {
+	sizeFunc := func(_ int) int64 {
 		// Linear congruential generator for pseudo-random sizes
 		rng = rng*1103515245 + 12345
 		return int64((rng / 65536) % 100) // 0-99
@@ -326,7 +326,7 @@ func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 
 	// Verify final stats: no items buffered, no bytes buffered
 	snap := stats()
-	s.Assert().Equal(int64(0), snap.BufferedItems, "all items should be drained")
+	s.Assert().Equal(0, snap.BufferedItems, "all items should be drained")
 	s.Assert().Equal(int64(0), snap.BufferedBytes, "all bytes should be accounted for (curMem should be 0)")
 }
 
@@ -349,7 +349,7 @@ func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
 	time.Sleep(50 * time.Millisecond)
 
 	snap := stats()
-	s.Assert().Equal(int64(3), snap.BufferedItems, "should be able to buffer exactly maxCount items")
+	s.Assert().Equal(3, snap.BufferedItems, "should be able to buffer exactly maxCount items")
 
 	// Now close and drain
 	close(in)
@@ -357,7 +357,7 @@ func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
 	}
 
 	snap = stats()
-	s.Assert().Equal(int64(0), snap.BufferedItems)
+	s.Assert().Zero(snap.BufferedItems)
 
 	// Test memory limit inclusivity: maxMem=60 should allow exactly 60 bytes buffered
 	out2, in2, stats2 := NewBoundedChan(100, 60, func(i int) int64 { return int64(i) })
@@ -374,7 +374,7 @@ func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
 	time.Sleep(50 * time.Millisecond)
 
 	snap2 := stats2()
-	s.Assert().Equal(int64(3), snap2.BufferedItems, "should have 3 items")
+	s.Assert().Equal(3, snap2.BufferedItems, "should have 3 items")
 	s.Assert().Equal(int64(60), snap2.BufferedBytes, "should be able to buffer exactly maxMem bytes")
 
 	// Now close and drain
