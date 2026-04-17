@@ -6,7 +6,7 @@ import (
 )
 
 // NewBoundedChan creates channels with memory-bounded semantics: it enforces
-// limits both of count and aggregate size. Returns a send channel and receive
+// limits both of count and aggregate size. Returns a read channel and write
 // channel, similar to io.Pipe(). The size function computes a single item’s size.
 //
 // This panics if either maxCount or maxMem is nonpositive.
@@ -14,7 +14,7 @@ func NewBoundedChan[T any](
 	maxCount int64,
 	maxMem int64,
 	size func(T) int64,
-) (chan<- T, <-chan T) {
+) (<-chan T, chan<- T) {
 	lo.Assertf(
 		maxCount > 0,
 		"maxCount (%d) must be positive",
@@ -41,7 +41,7 @@ func NewBoundedChan[T any](
 
 	go w.run()
 
-	return in, out
+	return out, in
 }
 
 type boundedChanWorker[T any] struct {

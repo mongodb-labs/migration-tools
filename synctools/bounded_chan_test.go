@@ -15,7 +15,7 @@ func TestBoundedChanTestSuite(t *testing.T) {
 }
 
 func (s *boundedChanTestSuite) TestBasicSendReceive() {
-	in, out := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
+	out, in := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
 
 	// Send a few items
 	for i := range 5 {
@@ -31,7 +31,7 @@ func (s *boundedChanTestSuite) TestBasicSendReceive() {
 
 func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 	maxCount := int64(3)
-	in, out := NewBoundedChan(maxCount, 10000, func(i int) int64 { return 1 })
+	out, in := NewBoundedChan(maxCount, 10000, func(i int) int64 { return 1 })
 
 	// Send maxCount + 1 items in a goroutine to avoid deadlock
 	go func() {
@@ -57,7 +57,7 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 
 func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	maxMem := int64(100)
-	in, out := NewBoundedChan(1000, maxMem, func(i int) int64 { return int64(i) })
+	out, in := NewBoundedChan(1000, maxMem, func(i int) int64 { return int64(i) })
 
 	// Send items in goroutine to avoid deadlock
 	go func() {
@@ -83,7 +83,7 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 }
 
 func (s *boundedChanTestSuite) TestInputChannelClosed() {
-	in, out := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
+	out, in := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
 
 	// Send some items and close
 	in <- 1
@@ -100,10 +100,9 @@ func (s *boundedChanTestSuite) TestInputChannelClosed() {
 	s.Equal([]int{1, 2, 3}, items)
 }
 
-
 func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 	maxMem := int64(100)
-	in, out := NewBoundedChan(100, maxMem, func(b []byte) int64 { return int64(len(b)) })
+	out, in := NewBoundedChan(100, maxMem, func(b []byte) int64 { return int64(len(b)) })
 
 	go func() {
 		// Send a large item
@@ -129,7 +128,7 @@ func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 }
 
 func (s *boundedChanTestSuite) TestManySmallItems() {
-	in, out := NewBoundedChan(5, 10000, func(i int) int64 { return 1 })
+	out, in := NewBoundedChan(5, 10000, func(i int) int64 { return 1 })
 
 	// Send 100 items through the channel
 	go func() {
@@ -150,7 +149,7 @@ func (s *boundedChanTestSuite) TestManySmallItems() {
 }
 
 func (s *boundedChanTestSuite) TestEmptyBuffer() {
-	in, out := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
+	out, in := NewBoundedChan(10, 1000, func(i int) int64 { return 1 })
 
 	// Send and receive immediately
 	in <- 42
@@ -167,7 +166,7 @@ func (s *boundedChanTestSuite) TestEmptyBuffer() {
 
 func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
 	// Limit to 3 items and 50 bytes
-	in, out := NewBoundedChan(3, 50, func(i int) int64 { return int64(i) })
+	out, in := NewBoundedChan(3, 50, func(i int) int64 { return int64(i) })
 
 	go func() {
 		// Send items: 5, 10, 15 (total 30 bytes, 3 items)
@@ -195,7 +194,7 @@ func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
 }
 
 func (s *boundedChanTestSuite) TestZeroItemEdgeCases() {
-	in, out := NewBoundedChan(10, 1000, func(i int) int64 {
+	out, in := NewBoundedChan(10, 1000, func(i int) int64 {
 		// Return 0 for size
 		return 0
 	})
