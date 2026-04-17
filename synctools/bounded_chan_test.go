@@ -4,6 +4,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -327,4 +328,60 @@ func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 	snap := stats()
 	s.Assert().Equal(int64(0), snap.BufferedItems, "all items should be drained")
 	s.Assert().Equal(int64(0), snap.BufferedBytes, "all bytes should be accounted for (curMem should be 0)")
+}
+
+func (s *boundedChanTestSuite) TestBoundsAreInclusive() {
+	// Verify that limits are inclusive: we can buffer up to (and including) maxCount items
+	// and up to (and including) maxMem bytes without automatic draining.
+
+	// Test count limit inclusivity: maxCount=3 should allow exactly 3 items buffered
+	out, in, stats := NewBoundedChan(3, 1000, func(i int) int64 { return 1 })
+
+	go func() {
+		// Send exactly 3 items; they should all stay buffered (not drained)
+		in <- 1
+		in <- 2
+		in <- 3
+		// Don't close yet; keep the channel open to prevent flushing
+	}()
+
+	// Give worker time to buffer items but don't read from out yet
+	time.Sleep(50 * time.Millisecond)
+
+	snap := stats()
+	s.Assert().Equal(int64(3), snap.BufferedItems, "should be able to buffer exactly maxCount items")
+
+	// Now close and drain
+	close(in)
+	for range out {
+	}
+
+	snap = stats()
+	s.Assert().Equal(int64(0), snap.BufferedItems)
+
+	// Test memory limit inclusivity: maxMem=60 should allow exactly 60 bytes buffered
+	out2, in2, stats2 := NewBoundedChan(100, 60, func(i int) int64 { return int64(i) })
+
+	go func() {
+		// Send items: 10, 20, 30 = 60 bytes total; should stay buffered
+		in2 <- 10
+		in2 <- 20
+		in2 <- 30
+		// Don't close; keep open to prevent flushing
+	}()
+
+	// Give worker time to buffer
+	time.Sleep(50 * time.Millisecond)
+
+	snap2 := stats2()
+	s.Assert().Equal(int64(3), snap2.BufferedItems, "should have 3 items")
+	s.Assert().Equal(int64(60), snap2.BufferedBytes, "should be able to buffer exactly maxMem bytes")
+
+	// Now close and drain
+	close(in2)
+	for range out2 {
+	}
+
+	snap2 = stats2()
+	s.Assert().Equal(int64(0), snap2.BufferedBytes)
 }

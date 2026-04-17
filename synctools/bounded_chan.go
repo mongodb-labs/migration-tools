@@ -16,9 +16,10 @@ type bufferedItem[T any] struct {
 
 // BoundedChanStats holds snapshot statistics about a BoundedChan’s internal state.
 type BoundedChanStats struct {
-	BufferedItems int64 // Number of items currently buffered
+	BufferedItems int // Number of items currently buffered
+	MaxItems      int // Maximum items allowed
+
 	BufferedBytes int64 // Total bytes of buffered items
-	MaxItems      int64 // Maximum items allowed
 	MaxBytes      int64 // Maximum bytes allowed
 }
 
@@ -67,9 +68,9 @@ func NewBoundedChan[T any](
 
 	statsFn := func() BoundedChanStats {
 		return BoundedChanStats{
-			BufferedItems: int64(w.buf.Len()),
+			BufferedItems: w.buf.Len(),
 			BufferedBytes: w.curMem.Load(),
-			MaxItems:      int64(maxCount),
+			MaxItems:      maxCount,
 			MaxBytes:      maxTotalSize,
 		}
 	}
@@ -144,6 +145,15 @@ func (w *boundedChanWorker[T]) receiveItem() bool {
 }
 
 func (w *boundedChanWorker[T]) receiveOrSend() bool {
+	// If at or over the count limit, must drain (send) before receiving more.
+	// This keeps the buffer within capacity without needing extra space.
+	if w.buf.Len() >= w.maxCount {
+		entry := w.buf.Peek()
+		w.out <- entry.item
+		w.pop()
+		return true
+	}
+
 	select {
 	case itemIn, ok := <-w.in:
 		if !ok {
@@ -167,7 +177,7 @@ func (w *boundedChanWorker[T]) flushRemaining() {
 }
 
 func (w *boundedChanWorker[T]) drainExcess() bool {
-	for w.buf.Len() > 0 && (int64(w.buf.Len()) >= int64(w.maxCount) || w.curMem.Load() >= w.maxMem) {
+	for w.buf.Len() > 0 && (w.buf.Len() > w.maxCount || w.curMem.Load() > w.maxMem) {
 		entry := w.buf.Peek()
 		w.out <- entry.item
 		w.pop()
