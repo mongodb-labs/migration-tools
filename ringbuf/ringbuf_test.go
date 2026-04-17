@@ -153,7 +153,7 @@ func (s *ringbufTestSuite) TestZeroValuesReleased() {
 
 func (s *ringbufTestSuite) TestConcurrentLenReads() {
 	// Verify Len() is safe for concurrent reads while single-threaded Push/Pop occurs.
-	// This tests the atomic.Int32 safety of the count field.
+	// This tests the atomic.Int64 safety of the count field.
 	r := New[int](100)
 
 	// Start goroutines constantly reading Len()
