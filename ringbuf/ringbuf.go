@@ -1,7 +1,11 @@
 // Package ringbuf provides a generic, fixed-capacity, array-backed ring buffer.
 package ringbuf
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+
+	"github.com/samber/lo"
+)
 
 // RingBuf is a generic, fixed-capacity, array-backed ring buffer.
 // Len() is safe for concurrent reads; other operations are single-threaded.
@@ -35,9 +39,11 @@ func (r *RingBuf[T]) Cap() int {
 //
 // NOT concurrency-safe.
 func (r *RingBuf[T]) Push(item T) {
-	if r.count.Load() >= int64(len(r.buf)) {
-		panic("ringbuf: push on full buffer")
-	}
+	lo.Assertf(
+		r.count.Load() < int64(len(r.buf)),
+		"buffer must be non-full",
+	)
+
 	r.buf[r.tail] = item
 	r.tail = (r.tail + 1) % len(r.buf)
 	r.count.Add(1)
@@ -48,9 +54,11 @@ func (r *RingBuf[T]) Push(item T) {
 //
 // NOT concurrency-safe.
 func (r *RingBuf[T]) Peek() T {
-	if r.count.Load() == 0 {
-		panic("ringbuf: peek on empty buffer")
-	}
+	lo.Assert(
+		r.count.Load() != 0,
+		"peek needs nonempty buffer",
+	)
+
 	return r.buf[r.head]
 }
 
@@ -60,9 +68,11 @@ func (r *RingBuf[T]) Peek() T {
 //
 // NOT concurrency-safe.
 func (r *RingBuf[T]) Pop() {
-	if r.count.Load() == 0 {
-		panic("ringbuf: pop on empty buffer")
-	}
+	lo.Assert(
+		r.count.Load() != 0,
+		"pop needs nonempty buffer",
+	)
+
 	var zero T
 	r.buf[r.head] = zero // release reference for GC
 	r.head = (r.head + 1) % len(r.buf)
