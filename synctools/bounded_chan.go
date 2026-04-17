@@ -67,6 +67,7 @@ func NewBoundedChan[T any](
 		buf:      ringbuf.New[bufferedItem[T]](maxCount),
 		size:     size,
 		maxCount: maxCount,
+		maxMem:   maxTotalSize,
 	}
 
 	go w.run()
@@ -90,6 +91,7 @@ type boundedChanWorker[T any] struct {
 	curMem   atomic.Int64 // atomic for lock-free stats queries
 	size     func(T) int64
 	maxCount int
+	maxMem   int64
 }
 
 func (w *boundedChanWorker[T]) itemSize(item T) int64 {
@@ -148,9 +150,9 @@ func (w *boundedChanWorker[T]) receiveItem() bool {
 // that means all work is done: the input channel is closed, and the
 // buffer is drained.
 func (w *boundedChanWorker[T]) receiveOrSend() bool {
-	// If at the count limit, must drain (send) before receiving more.
-	// This keeps the buffer within capacity without needing extra space.
-	if w.buf.Len() == w.maxCount {
+	// If at the count limit or over the memory limit, must drain (send)
+	// before receiving more.
+	if w.buf.Len() == w.maxCount || w.curMem.Load() > w.maxMem {
 		w.drainOne()
 		return true
 	}

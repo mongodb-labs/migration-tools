@@ -60,29 +60,49 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 }
 
 func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
-	const maxMem = 100
-	out, in, _ := NewBoundedChan(1000, maxMem, func(i int) int64 { return int64(i) })
+	// maxCount is high (won't trigger); only memory limit should bound the buffer.
+	// Each item costs 30 bytes. One item fits (30 ≤ 50); two push over (60 > 50),
+	// so the worker must drain before accepting a third.
+	//
+	// A concurrent observer tracks peak BufferedBytes.
+	// With enforcement: peak ≤ maxMem + itemSize = 80.
+	// Without enforcement: peak could reach 100 × 30 = 3000.
+	const maxMem = 50
+	const itemSize = 30
+	out, in, stats := NewBoundedChan(100, maxMem, func(int) int64 { return itemSize })
 
-	// Send items in goroutine to avoid deadlock
+	// Observer: track peak BufferedBytes.
+	var peakBytes atomic.Int64
+	done := make(chan struct{})
 	go func() {
-		// The first four items total 85, which is under maxMem, so they should
-		// all be buffered. The fifth item pushes the total to 105, exceeding
-		// maxMem (10, 20, 30, 25, 20 = 105).
-		itemsToSend := []int{10, 20, 30, 25, 20}
-		for _, item := range itemsToSend {
-			in <- item
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				cur := stats().BufferedBytes
+				for old := peakBytes.Load(); cur > old; old = peakBytes.Load() {
+					peakBytes.CompareAndSwap(old, cur)
+				}
+				runtime.Gosched()
+			}
+		}
+	}()
+
+	// Producer: send 100 items.
+	go func() {
+		for range 100 {
+			in <- 0
 		}
 		close(in)
 	}()
 
-	// Collect items and verify the full output sequence.
-	items := []int{}
-	for item := range out {
-		items = append(items, item)
-	}
+	received := consumeItems(out)
+	close(done)
 
-	// All items should come through in order.
-	s.Assert().Equal([]int{10, 20, 30, 25, 20}, items)
+	s.Assert().Equal(100, received)
+	s.Assert().LessOrEqual(peakBytes.Load(), int64(maxMem+itemSize),
+		"peak buffered bytes should be bounded by maxMem + one item")
 }
 
 func (s *boundedChanTestSuite) TestInputChannelClosed() {
