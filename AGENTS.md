@@ -15,3 +15,5 @@ Follow all linter settings, especially cyclomatic complexity limitations, when w
 
 When writing tests, use require.Eventually to ensure empirically that a required condition is met.
 Never just write a time.Sleep() and assume that the condition will be met after that duration.
+
+Always reread relevant files before answering questions about their content.

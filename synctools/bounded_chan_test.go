@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -47,10 +48,7 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 
 	// When buffer hits limit and we send another, the first should be drained
 	// Collect all outputs to verify they come in order
-	items := []int{}
-	for item := range out {
-		items = append(items, item)
-	}
+	items := lo.ChannelToSlice(out)
 
 	s.Assert().Len(items, maxCount+1)
 	// Verify items came in order
@@ -116,10 +114,7 @@ func (s *boundedChanTestSuite) TestInputChannelClosed() {
 	close(in)
 
 	// All items should be received
-	items := []int{}
-	for item := range out {
-		items = append(items, item)
-	}
+	items := lo.ChannelToSlice(out)
 
 	s.Assert().Equal([]int{1, 2, 3}, items)
 }
@@ -136,10 +131,7 @@ func (s *boundedChanTestSuite) TestOversizedItem() {
 		close(in)
 	}()
 
-	items := []int{}
-	for item := range out {
-		items = append(items, item)
-	}
+	items := lo.ChannelToSlice(out)
 
 	s.Assert().Equal([]int{200, 200, 200}, items)
 
@@ -149,24 +141,40 @@ func (s *boundedChanTestSuite) TestOversizedItem() {
 }
 
 func (s *boundedChanTestSuite) TestLastItemExceedsMemoryLimit() {
+	t := s.T()
+
 	// The total-size limit is soft: an item that pushes the total over maxMem
 	// is still accepted, then the worker drains before accepting more.
 	// Here maxMem=50, and we send 30+30=60 which exceeds the limit.
 	// Both items should pass through, and stats should return to zero.
 	out, in, stats := NewBoundedChan(100, 50, func(i int) int64 { return int64(i) })
 
+	sendBlocked := make(chan struct{})
 	go func() {
+		defer close(in)
+
 		in <- 30 // curMem=30, under limit
-		in <- 30 // curMem=60, over limit — allowed as the "last item"
-		close(in)
+		in <- 30 // curMem=60, over limit — allowed as the last item
+
+		select {
+		case in <- 30:
+			require.Fail(t, "extra send", "must block once limit is met/exceeded")
+		default:
+		}
+
+		close(sendBlocked)
+
+		in <- 25 // curMem=55, over limit - allowed as the last item
 	}()
 
-	items := []int{}
-	for item := range out {
-		items = append(items, item)
-	}
+	<-sendBlocked
+	afterBlocked := pollStats(s.T(), stats, func(st BoundedChanStats) bool { return st.BufferedItems == 2 })
+	s.Assert().Equal(2, afterBlocked.BufferedItems, "should have 2 items buffered after blocked send")
+	s.Assert().Equal(int64(60), afterBlocked.BufferedBytes, "should have 60 bytes buffered after blocked send")
 
-	s.Assert().Equal([]int{30, 30}, items)
+	items := lo.ChannelToSlice(out)
+
+	s.Assert().Equal([]int{30, 30, 25}, items)
 
 	snap := stats()
 	s.Assert().Zero(snap.BufferedItems)
@@ -257,10 +265,7 @@ func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
 	}()
 
 	// Collect all items
-	items := []int{}
-	for item := range out {
-		items = append(items, item)
-	}
+	items := lo.ChannelToSlice(out)
 
 	// All 5 items should come through
 	s.Assert().Len(items, 5)
@@ -337,11 +342,11 @@ func isValidSnapshot(snap BoundedChanStats) bool {
 		snap.BufferedBytes >= 0 && snap.BufferedBytes <= snap.MaxBytes
 }
 
-// produceItems sends 100 items to the channel then closes it.
+// produceItems sends items 1..100 to the channel then closes it.
 func produceItems(in chan<- int) {
 	go func() {
-		for i := 1; i <= 100; i++ {
-			in <- i
+		for i := range 100 {
+			in <- 1 + i
 		}
 		close(in)
 	}()
