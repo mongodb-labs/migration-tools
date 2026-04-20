@@ -28,12 +28,17 @@ func (s *boundedChanTestSuite) TestBasicSendReceive() {
 	for i := range 5 {
 		in <- i
 	}
+	close(in)
 
 	// Receive them back
 	for i := range 5 {
 		val := <-out
 		s.Assert().Equal(i, val)
 	}
+
+	// Ensure the worker terminates and closes the output channel.
+	_, ok := <-out
+	s.Assert().False(ok)
 }
 
 func (s *boundedChanTestSuite) TestCountLimitEnforced() {
