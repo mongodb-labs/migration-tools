@@ -23,6 +23,16 @@ type BoundedChanStats struct {
 	MaxBytes      int64 // Maximum bytes allowed
 }
 
+type boundedChanWorker[T any] struct {
+	in       <-chan T
+	out      chan<- T
+	buf      *ringbuf.RingBuf[bufferedItem[T]]
+	curMem   atomic.Int64 // atomic for lock-free stats queries
+	size     func(T) int64
+	maxCount int
+	maxMem   int64
+}
+
 // NewBoundedChan is like a plain channel but also lets you limit the amount of
 // memory to which the channel members refer. For example, instead of a plain
 // chan []byte, which limits only by len(chan), use NewBoundedChan to limit
@@ -84,14 +94,63 @@ func NewBoundedChan[T any](
 	return out, in, statsFn
 }
 
-type boundedChanWorker[T any] struct {
-	in       <-chan T
-	out      chan<- T
-	buf      *ringbuf.RingBuf[bufferedItem[T]]
-	curMem   atomic.Int64 // atomic for lock-free stats queries
-	size     func(T) int64
-	maxCount int
-	maxMem   int64
+func (w *boundedChanWorker[T]) run() {
+	defer close(w.out)
+
+	for w.processItems() {
+	}
+}
+
+// Returns false to indicate that all work is done: the input channel
+// is closed, and the buffer is drained.
+func (w *boundedChanWorker[T]) processItems() bool {
+	if w.buf.Len() == 0 {
+		return w.receiveItem()
+	}
+	return w.receiveOrSend()
+}
+
+// Called when the buffer is nonempty.
+// This returns a “there’s more to do” bool. IOW, if it returns false,
+// that means all work is done: the input channel is closed, and the
+// buffer is drained.
+func (w *boundedChanWorker[T]) receiveOrSend() bool {
+	// If the memory or count limits constrain us, we must drain (send)
+	// before receiving more.
+	if w.buf.Len() == w.maxCount || w.curMem.Load() >= w.maxMem {
+		w.drainOne()
+		return true
+	}
+
+	return w.receiveOrSendNormal()
+}
+
+// Called when the buffer is empty.
+// Returns false to indicate that the input channel is closed (and therefore
+// all work is done).
+func (w *boundedChanWorker[T]) receiveItem() bool {
+	item, ok := <-w.in
+	if !ok {
+		return false
+	}
+	w.push(item)
+	return true
+}
+
+// receiveOrSendNormal handles the normal case when below the count limit.
+func (w *boundedChanWorker[T]) receiveOrSendNormal() bool {
+	select {
+	case itemIn, ok := <-w.in:
+		if !ok {
+			w.flushRemaining()
+			return false
+		}
+		w.push(itemIn)
+		return true
+	case w.out <- w.buf.Peek().item:
+		w.pop()
+		return true
+	}
 }
 
 func (w *boundedChanWorker[T]) itemSize(item T) int64 {
@@ -120,72 +179,10 @@ func (w *boundedChanWorker[T]) pop() {
 	w.buf.Pop()
 }
 
-func (w *boundedChanWorker[T]) run() {
-	defer close(w.out)
-
-	for w.processItems() {
-	}
-}
-
-// Returns false to indicate that all work is done: the input channel
-// is closed, and the buffer is drained.
-func (w *boundedChanWorker[T]) processItems() bool {
-	if w.buf.Len() == 0 {
-		return w.receiveItem()
-	}
-	return w.receiveOrSend()
-}
-
-// Returns false to indicate that the input channel is closed.
-func (w *boundedChanWorker[T]) receiveItem() bool {
-	item, ok := <-w.in
-	if !ok {
-		return false
-	}
-	w.push(item)
-	return true
-}
-
-// This returns a “there’s more to do” bool. IOW, if it returns false,
-// that means all work is done: the input channel is closed, and the
-// buffer is drained.
-func (w *boundedChanWorker[T]) receiveOrSend() bool {
-	// If at the count limit or over the memory limit, must drain (send)
-	// before receiving more.
-	if w.buf.Len() == w.maxCount || w.curMem.Load() > w.maxMem {
-		w.drainOne()
-		return true
-	}
-
-	return w.receiveOrSendNormal()
-}
-
 func (w *boundedChanWorker[T]) drainOne() {
 	entry := w.buf.Peek()
 	w.out <- entry.item
 	w.pop()
-}
-
-// receiveOrSendNormal handles the normal case when below the count limit.
-func (w *boundedChanWorker[T]) receiveOrSendNormal() bool {
-	select {
-	case itemIn, ok := <-w.in:
-		return w.handleReceive(itemIn, ok)
-	case w.out <- w.buf.Peek().item:
-		w.pop()
-		return true
-	}
-}
-
-// handleReceive processes a received item or input close.
-// Its return indicates whether the receiver is still open.
-func (w *boundedChanWorker[T]) handleReceive(item T, ok bool) bool {
-	if !ok {
-		w.flushRemaining()
-		return false
-	}
-	w.push(item)
-	return true
 }
 
 func (w *boundedChanWorker[T]) flushRemaining() {

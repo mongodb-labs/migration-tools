@@ -61,14 +61,15 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 
 func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	// maxCount is high (won't trigger); only memory limit should bound the buffer.
-	// Each item costs 30 bytes. One item fits (30 ≤ 50); two push over (60 > 50),
-	// so the worker must drain before accepting a third.
+	// Each item costs 20 bytes, maxMem=60. Three items reach exactly 60 bytes,
+	// triggering forced drain (>=). A fourth item cannot be accepted until one
+	// is drained, so peak BufferedBytes should never exceed maxMem.
 	//
 	// A concurrent observer tracks peak BufferedBytes.
-	// With enforcement: peak ≤ maxMem + itemSize = 80.
-	// Without enforcement: peak could reach 100 × 30 = 3000.
-	const maxMem = 50
-	const itemSize = 30
+	// With enforcement (>=): peak ≤ 60.
+	// Without enforcement: peak could reach 100 × 20 = 2000.
+	const maxMem = 60
+	const itemSize = 20
 	out, in, stats := NewBoundedChan(100, maxMem, func(int) int64 { return itemSize })
 
 	// Observer: track peak BufferedBytes.
@@ -101,8 +102,8 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	close(done)
 
 	s.Assert().Equal(100, received)
-	s.Assert().LessOrEqual(peakBytes.Load(), int64(maxMem+itemSize),
-		"peak buffered bytes should be bounded by maxMem + one item")
+	s.Assert().LessOrEqual(peakBytes.Load(), int64(maxMem),
+		"peak buffered bytes should not exceed maxMem")
 }
 
 func (s *boundedChanTestSuite) TestInputChannelClosed() {
@@ -442,26 +443,23 @@ func (s *boundedChanTestSuite) TestCountBoundIsInclusive() {
 	s.Assert().Zero(snap.BufferedItems)
 }
 
-func (s *boundedChanTestSuite) TestMemoryBoundIsInclusive() {
-	// Verify that maxMem limit is inclusive: we can buffer exactly maxMem bytes without draining.
+func (s *boundedChanTestSuite) TestMemoryBelowLimitStaysBuffered() {
+	// Items totaling strictly less than maxMem should all stay buffered.
+	// 10 + 20 + 29 = 59 < maxMem = 60: no forced drain.
 	out, in, stats := NewBoundedChan(100, 60, func(i int) int64 { return int64(i) })
 
 	sentDone := make(chan struct{})
 	go func() {
-		// Send items: 10, 20, 30 = 60 bytes total; should stay buffered
 		in <- 10
 		in <- 20
-		in <- 30
-		// Signal that sending is complete; goroutine exits immediately after
+		in <- 29
 		close(sentDone)
 	}()
 
-	// Poll until items are buffered or we know sending is done
 	snap := pollStats(s.T(), stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
 	s.Assert().Equal(3, snap.BufferedItems, "should have 3 items")
-	s.Assert().Equal(int64(60), snap.BufferedBytes, "should be able to buffer exactly maxMem bytes")
+	s.Assert().Equal(int64(59), snap.BufferedBytes, "items below maxMem should stay buffered")
 
-	// Wait for sending to complete, then close input and drain
 	<-sentDone
 	close(in)
 	for range out {
