@@ -168,9 +168,15 @@ func (s *boundedChanTestSuite) TestLastItemExceedsMemoryLimit() {
 	}()
 
 	<-sendBlocked
-	afterBlocked := pollStats(s.T(), stats, func(st BoundedChanStats) bool { return st.BufferedItems == 2 })
-	s.Assert().Equal(2, afterBlocked.BufferedItems, "should have 2 items buffered after blocked send")
-	s.Assert().Equal(int64(60), afterBlocked.BufferedBytes, "should have 60 bytes buffered after blocked send")
+	afterBlocked := pollStats(
+		s.T(),
+		stats,
+		func(st BoundedChanStats) bool { return st.BufferedItems == 2 },
+	)
+	s.Assert().
+		Equal(2, afterBlocked.BufferedItems, "should have 2 items buffered after blocked send")
+	s.Assert().
+		Equal(int64(60), afterBlocked.BufferedBytes, "should have 60 bytes buffered after blocked send")
 
 	items := lo.ChannelToSlice(out)
 
