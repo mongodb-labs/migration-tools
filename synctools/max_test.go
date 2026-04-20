@@ -102,11 +102,13 @@ func (s *atomicMaxTestSuite) TestConcurrentUpdates() {
 func (s *atomicMaxTestSuite) TestConcurrentUpdatesAndReads() {
 	am := NewAtomicMax(0, cmp.Compare[int])
 
-	done := make(chan struct{})
+	updatesDone := make(chan struct{})
+	getsDone := make(chan struct{})
 	go func() {
+		defer close(getsDone)
 		for {
 			select {
-			case <-done:
+			case <-updatesDone:
 				return
 			default:
 				v := am.Get()
@@ -125,6 +127,8 @@ func (s *atomicMaxTestSuite) TestConcurrentUpdatesAndReads() {
 	}
 	wg.Wait()
 
-	close(done)
+	close(updatesDone)
 	s.Assert().Equal(999, am.Get())
+
+	<-getsDone
 }
