@@ -203,6 +203,8 @@ func (s *ringbufTestSuite) TestConcurrentCapReads() {
 	r := New[int](42)
 
 	done := make(chan struct{})
+	defer close(done)
+
 	var capCounter atomic.Int32
 	for range 5 {
 		go func() {
@@ -233,8 +235,6 @@ func (s *ringbufTestSuite) TestConcurrentCapReads() {
 		time.Minute,
 		time.Millisecond,
 	)
-
-	close(done)
 
 	// Verify concurrent reads actually executed
 	s.Assert().Positive(capCounter.Load(), "cap reader should have executed")

@@ -392,13 +392,12 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 
 func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 	// Verify that size is computed once on receipt and reused on drain.
-	// This test would fail if size() were called multiple times and returned different values.
-	// We use a size function that returns a random int64 to simulate a mutable-state scenario.
-	var rng uint64 = 12345 // seed
-	sizeFunc := func(_ int) int64 {
-		// Linear congruential generator for pseudo-random sizes
-		rng = rng*1103515245 + 12345
-		return int64((rng / 65536) % 100) // 0-99
+	// Count size() invocations directly so the test deterministically fails if
+	// size() is called more than once per item.
+	var sizeCalls atomic.Int64
+	sizeFunc := func(i int) int64 {
+		sizeCalls.Add(1)
+		return int64(i + 1)
 	}
 
 	out, in, stats := NewBoundedChan(10, 1000, sizeFunc)
@@ -418,6 +417,7 @@ func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 	}
 
 	s.Assert().Equal(10, received)
+	s.Assert().EqualValues(10, sizeCalls.Load(), "size() should be called exactly once per item")
 
 	// Verify final stats: no items buffered, no bytes buffered
 	snap := stats()
