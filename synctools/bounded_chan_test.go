@@ -60,10 +60,11 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 }
 
 func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
-	// maxCount is high (won't trigger); only memory limit should bound the buffer.
-	// Each item costs 20 bytes, maxMem=60. Three items reach exactly 60 bytes,
-	// triggering forced drain (>=). A fourth item cannot be accepted until one
-	// is drained, so peak BufferedBytes should never exceed maxMem.
+	// maxCount is high (won't trigger); only memory limit should block.
+	// Each item costs <= 20 bytes, maxMem=60. That max is a soft limit: we can
+	// exceed it, but not by more than 1 item’s size. So the channel should
+	// block once we hit 60 bytes, but the blocked send will push us to at most
+	// 80 bytes before we drain back down.
 	//
 	// A concurrent observer tracks peak BufferedBytes.
 	// With enforcement (>=): peak ≤ 60.
