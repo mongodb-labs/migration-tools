@@ -1,6 +1,8 @@
 package synctools
 
 import (
+	"cmp"
+	"math/rand/v2"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -67,11 +69,15 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	// With enforcement (>=): peak ≤ 60.
 	// Without enforcement: peak could reach 100 × 20 = 2000.
 	const maxMem = 60
-	const itemSize = 20
-	out, in, stats := NewBoundedChan(100, maxMem, func(int) int64 { return itemSize })
+	const maxItemSize = 20
+	out, in, stats := NewBoundedChan(
+		100,
+		maxMem,
+		func(int) int64 { return rand.Int64N(maxItemSize) },
+	)
 
 	// Observer: track peak BufferedBytes.
-	var peakBytes atomic.Int64
+	peakBytes := NewAtomicMax(int64(0), cmp.Compare)
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -79,10 +85,7 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 			case <-done:
 				return
 			default:
-				cur := stats().BufferedBytes
-				for old := peakBytes.Load(); cur > old; old = peakBytes.Load() {
-					peakBytes.CompareAndSwap(old, cur)
-				}
+				peakBytes.Update(stats().BufferedBytes)
 				runtime.Gosched()
 			}
 		}
@@ -100,8 +103,14 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	close(done)
 
 	s.Assert().Equal(100, received)
-	s.Assert().LessOrEqual(peakBytes.Load(), int64(maxMem),
-		"peak buffered bytes should not exceed maxMem")
+
+	// Since maxMem is a “soft” limit it’s possible to exceed it, but that will
+	// never be by more than 1 item’s size.
+	s.Assert().LessOrEqual(
+		peakBytes.Get(),
+		int64(maxMem+maxItemSize),
+		"peak buffered bytes should not exceed maxMem by “much”",
+	)
 }
 
 func (s *boundedChanTestSuite) TestInputChannelClosed() {
@@ -343,6 +352,7 @@ func statsReaderLoop(stats func() BoundedChanStats, done chan struct{}, counter 
 }
 
 // isValidSnapshot verifies that a stats snapshot is within expected bounds.
+// IMPORTANT: This is valid ONLY where no over-limit buffering can happen.
 func isValidSnapshot(snap BoundedChanStats) bool {
 	return snap.BufferedItems >= 0 && snap.BufferedItems <= snap.MaxItems &&
 		snap.BufferedBytes >= 0 && snap.BufferedBytes <= snap.MaxBytes

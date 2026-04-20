@@ -33,15 +33,15 @@ type boundedChanWorker[T any] struct {
 	maxMem   int64
 }
 
-// NewBoundedChan is like a plain channel but also lets you limit the amount of
-// memory to which the channel members refer. For example, instead of a plain
-// chan []byte, which limits only by len(chan), use NewBoundedChan to limit
-// both by len *and* the buffers’ total size.
+// NewBoundedChan is like a plain channel but also lets you soft-limit the
+// amount of memory to which the channel members refer. For example, instead of
+// a plain chan []byte, which limits only by len(chan), use NewBoundedChan to
+// limit both by len *and* the buffers’ total size.
 //
-// (The total-size limitation is a “soft” limit: we receive items until the
-// limit is exceeded, then we stop receiving and drain until we’re below the
-// limit again. So the channel may temporarily exceed the total-size limit,
-// but the excess will not be permanent.)
+// The total-size limitation is a “soft” limit: we receive items until the
+// limit is met or exceeded, then we stop receiving and drain until we’re below
+// the limit again. So the channel will, in all likelihood, regularly exceed
+// limit by some amount, but it will not grow without bound.
 //
 // This returns separate read-from & write-to channels. (Similar to io.Pipe(),
 // but with channels). The size function computes a single item’s size.
