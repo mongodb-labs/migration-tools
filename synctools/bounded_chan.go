@@ -38,6 +38,11 @@ type boundedChanWorker[T any] struct {
 // chan []byte, which limits only by len(chan), use NewBoundedChan to limit
 // both by len *and* the buffers’ total size.
 //
+// (The total-size limitation is a “soft” limit: we receive items until the
+// limit is exceeded, then we stop receiving and drain until we’re below the
+// limit again. So the channel may temporarily exceed the total-size limit,
+// but the excess will not be permanent.)
+//
 // This returns separate read-from & write-to channels. (Similar to io.Pipe(),
 // but with channels). The size function computes a single item’s size.
 //

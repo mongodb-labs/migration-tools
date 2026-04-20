@@ -148,6 +148,31 @@ func (s *boundedChanTestSuite) TestOversizedItem() {
 	s.Assert().Equal(int64(0), snap.BufferedBytes)
 }
 
+func (s *boundedChanTestSuite) TestLastItemExceedsMemoryLimit() {
+	// The total-size limit is soft: an item that pushes the total over maxMem
+	// is still accepted, then the worker drains before accepting more.
+	// Here maxMem=50, and we send 30+30=60 which exceeds the limit.
+	// Both items should pass through, and stats should return to zero.
+	out, in, stats := NewBoundedChan(100, 50, func(i int) int64 { return int64(i) })
+
+	go func() {
+		in <- 30 // curMem=30, under limit
+		in <- 30 // curMem=60, over limit — allowed as the "last item"
+		close(in)
+	}()
+
+	items := []int{}
+	for item := range out {
+		items = append(items, item)
+	}
+
+	s.Assert().Equal([]int{30, 30}, items)
+
+	snap := stats()
+	s.Assert().Zero(snap.BufferedItems)
+	s.Assert().Equal(int64(0), snap.BufferedBytes)
+}
+
 func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 	maxMem := int64(100)
 	out, in, _ := NewBoundedChan(100, maxMem, func(b []byte) int64 { return int64(len(b)) })
@@ -336,17 +361,24 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 	out, in, stats := NewBoundedChan(5, 1000, func(i int) int64 { return int64(i) })
 
 	// Send 3 items: size 1, 2, 3 = 6 total.
-	// Because out is not being read yet, once these sends complete the worker
-	// cannot drain buffered items any further, so the snapshot is deterministic.
-	in <- 1
-	in <- 2
-	in <- 3
+	// We must poll for the stats because unbuffered channel sends complete when
+	// the receiver starts receiving, not when it finishes processing the item.
+	// Using a goroutine to send ensures the worker goroutine has time to process.
+	sentDone := make(chan struct{})
+	go func() {
+		in <- 1
+		in <- 2
+		in <- 3
+		close(sentDone)
+	}()
 
-	snap := stats()
+	snap := pollStats(s.T(), stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
 	s.Assert().Equal(3, snap.BufferedItems)
 	s.Assert().Equal(int64(6), snap.BufferedBytes)
 	s.Assert().Equal(5, snap.MaxItems)
 	s.Assert().Equal(int64(1000), snap.MaxBytes)
+
+	<-sentDone
 
 	// Close and drain remaining
 	close(in)

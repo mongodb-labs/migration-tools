@@ -44,6 +44,18 @@ func (s *ringbufTestSuite) TestBasicPushPop() {
 	s.Assert().Equal(0, r.Len())
 }
 
+func (s *ringbufTestSuite) TestZeroCapacityPanic() {
+	s.Assert().PanicsWithValue("ringbuf: capacity must be > 0", func() {
+		New[int](0)
+	})
+}
+
+func (s *ringbufTestSuite) TestNegativeCapacityPanic() {
+	s.Assert().PanicsWithValue("ringbuf: capacity must be > 0", func() {
+		New[int](-1)
+	})
+}
+
 func (s *ringbufTestSuite) TestWrapAround() {
 	r := New[int](3)
 
