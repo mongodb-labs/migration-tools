@@ -17,6 +17,10 @@ func NewAtomicMax[T any](
 	initial T,
 	comparer func(a, b T) int,
 ) *AtomicMax[T] {
+	if comparer == nil {
+		panic("synctools: nil comparer passed to NewAtomicMax")
+	}
+
 	am := &AtomicMax[T]{
 		comparer: comparer,
 	}
