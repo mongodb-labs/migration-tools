@@ -8,7 +8,7 @@ import (
 )
 
 // RingBuf is a generic, fixed-capacity, array-backed ring buffer.
-// Len() is safe for concurrent reads; other operations are single-threaded.
+// Some operations are concurrency-safe, but NOT all. See methods docs.
 type RingBuf[T any] struct {
 	buf   []T
 	head  int
