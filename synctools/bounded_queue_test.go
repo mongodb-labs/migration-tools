@@ -140,7 +140,12 @@ func (s *boundedQueueTestSuite) TestInputChannelClosed() {
 func (s *boundedQueueTestSuite) TestOversizedItem() {
 	// A single item larger than maxMem should still pass through.
 	// The memory limit is temporarily exceeded, then restored after drain.
-	out, in, stats := NewBoundedQueue(s.T().Context(), 10, 50, func(i int) int64 { return int64(i) })
+	out, in, stats := NewBoundedQueue(
+		s.T().Context(),
+		10,
+		50,
+		func(i int) int64 { return int64(i) },
+	)
 
 	go func() {
 		in <- 200
@@ -457,7 +462,11 @@ func (s *boundedQueueTestSuite) TestStatsAccuracy() {
 		close(sentDone)
 	}()
 
-	snap := pollStats(s.T(), stats, func(st BoundedQueueStats) bool { return st.BufferedItems == 3 })
+	snap := pollStats(
+		s.T(),
+		stats,
+		func(st BoundedQueueStats) bool { return st.BufferedItems == 3 },
+	)
 	s.Assert().Equal(3, snap.BufferedItems)
 	s.Assert().Equal(int64(6), snap.BufferedBytes)
 	s.Assert().Equal(5, snap.MaxItems)
@@ -547,7 +556,11 @@ func (s *boundedQueueTestSuite) TestCountBoundIsInclusive() {
 	}()
 
 	// Poll until items are buffered or we know sending is done
-	snap := pollStats(s.T(), stats, func(st BoundedQueueStats) bool { return st.BufferedItems == 3 })
+	snap := pollStats(
+		s.T(),
+		stats,
+		func(st BoundedQueueStats) bool { return st.BufferedItems == 3 },
+	)
 	s.Assert().Equal(3, snap.BufferedItems, "should be able to buffer exactly maxCount items")
 
 	// Wait for sending to complete, then close input and drain
@@ -578,7 +591,11 @@ func (s *boundedQueueTestSuite) TestMemoryBelowLimitStaysBuffered() {
 		close(sentDone)
 	}()
 
-	snap := pollStats(s.T(), stats, func(st BoundedQueueStats) bool { return st.BufferedItems == 3 })
+	snap := pollStats(
+		s.T(),
+		stats,
+		func(st BoundedQueueStats) bool { return st.BufferedItems == 3 },
+	)
 	s.Assert().Equal(3, snap.BufferedItems, "should have 3 items")
 	s.Assert().Equal(int64(59), snap.BufferedBytes, "items below maxMem should stay buffered")
 
