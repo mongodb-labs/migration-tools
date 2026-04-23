@@ -74,7 +74,7 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	// 80 bytes before we drain back down.
 	//
 	// A concurrent observer tracks peak BufferedBytes.
-	// With enforcement (>=): peak ≤ 60.
+	// With enforcement (soft limit): peak ≤ maxMem+maxItemSize = 80.
 	// Without enforcement: peak could reach 100 × 20 = 2000.
 	const maxMem = 60
 	const maxItemSize = 20
