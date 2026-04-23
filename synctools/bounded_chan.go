@@ -1,6 +1,7 @@
 package synctools
 
 import (
+	"context"
 	"sync/atomic"
 
 	"github.com/mongodb-labs/migration-tools/ringbuf"
@@ -49,9 +50,15 @@ type boundedChanWorker[T any] struct {
 // NOTE: The returned channels are unbuffered and WILL NOT reflect current
 // usage. Use the returned stats function for lock-free stats queries.
 //
+// Context cancellation will cause the read-from channel to close immediately,
+// even if there are still items waiting to be read. Thus, if the context is
+// canceled while there are items in the buffer, those items will be discarded
+// rather than sent.
+//
 // This panics if maxCount or maxTotalSize is nonpositive, if size is nil, or
 // if size returns a negative value for any item.
 func NewBoundedChan[T any](
+	ctx context.Context,
 	maxCount int,
 	maxTotalSize int64,
 	size func(T) int64,
@@ -85,7 +92,7 @@ func NewBoundedChan[T any](
 		maxMem:   maxTotalSize,
 	}
 
-	go w.run()
+	go w.run(ctx)
 
 	statsFn := func() BoundedChanStats {
 		return BoundedChanStats{
@@ -99,52 +106,54 @@ func NewBoundedChan[T any](
 	return out, in, statsFn
 }
 
-func (w *boundedChanWorker[T]) run() {
+func (w *boundedChanWorker[T]) run(ctx context.Context) {
 	defer close(w.out)
 
-	for w.processItems() {
+	for w.processItems(ctx) {
 	}
 }
 
 // Returns false to indicate that all work is done: the input channel
 // is closed, and the buffer is drained.
-func (w *boundedChanWorker[T]) processItems() bool {
+func (w *boundedChanWorker[T]) processItems(ctx context.Context) bool {
 	if w.buf.Len() == 0 {
-		return w.receiveItem()
+		return w.receiveItem(ctx)
 	}
-	return w.receiveOrSend()
+	return w.receiveOrSend(ctx)
 }
 
 // Called when the buffer is nonempty.
-// This returns a “there’s more to do” bool. IOW, if it returns false,
-// that means all work is done: the input channel is closed, and the
-// buffer is drained.
-func (w *boundedChanWorker[T]) receiveOrSend() bool {
+// Returns false to indicate that the queue should shut down.
+func (w *boundedChanWorker[T]) receiveOrSend(ctx context.Context) bool {
 	// If the memory or count limits constrain us, we must drain (send)
 	// before receiving more.
 	if w.buf.Len() == w.maxCount || w.curMem.Load() >= w.maxMem {
-		w.drainOne()
-		return true
+		return w.drainOne(ctx)
 	}
 
-	return w.receiveOrSendNormal()
+	return w.receiveOrSendNormal(ctx)
 }
 
 // Called when the buffer is empty.
-// Returns false to indicate that the input channel is closed (and therefore
-// all work is done).
-func (w *boundedChanWorker[T]) receiveItem() bool {
-	item, ok := <-w.in
-	if !ok {
+// Returns false to indicate that the queue should shut down.
+func (w *boundedChanWorker[T]) receiveItem(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
 		return false
+	case item, ok := <-w.in:
+		if !ok {
+			return false
+		}
+		w.push(item)
+		return true
 	}
-	w.push(item)
-	return true
 }
 
 // receiveOrSendNormal handles the normal case when below the count limit.
-func (w *boundedChanWorker[T]) receiveOrSendNormal() bool {
+func (w *boundedChanWorker[T]) receiveOrSendNormal(ctx context.Context) bool {
 	select {
+	case <-ctx.Done():
+		return false
 	case itemIn, ok := <-w.in:
 		if !ok {
 			w.flushRemaining()
@@ -184,10 +193,16 @@ func (w *boundedChanWorker[T]) pop() {
 	w.buf.Pop()
 }
 
-func (w *boundedChanWorker[T]) drainOne() {
+func (w *boundedChanWorker[T]) drainOne(ctx context.Context) bool {
 	entry := w.buf.Peek()
-	w.out <- entry.item
-	w.pop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case w.out <- entry.item:
+		w.pop()
+		return true
+	}
 }
 
 func (w *boundedChanWorker[T]) flushRemaining() {
