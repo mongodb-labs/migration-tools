@@ -15,8 +15,8 @@ type bufferedItem[T any] struct {
 	size int64
 }
 
-// BoundedChanStats holds snapshot statistics about a BoundedChan’s internal state.
-type BoundedChanStats struct {
+// BoundedQueueStats holds snapshot statistics about a bounded queue’s internal state.
+type BoundedQueueStats struct {
 	BufferedItems int // Number of items currently buffered
 	MaxItems      int // Maximum items allowed
 
@@ -24,7 +24,7 @@ type BoundedChanStats struct {
 	MaxBytes      int64 // Maximum bytes allowed
 }
 
-type boundedChanWorker[T any] struct {
+type boundedQueueWorker[T any] struct {
 	in       <-chan T
 	out      chan<- T
 	buf      *ringbuf.RingBuf[bufferedItem[T]]
@@ -34,9 +34,9 @@ type boundedChanWorker[T any] struct {
 	maxMem   int64
 }
 
-// NewBoundedChan is like a plain channel but also lets you soft-limit the
+// NewBoundedQueue is like a channel but also lets you soft-limit the
 // amount of memory to which the channel members refer. For example, instead of
-// a plain chan []byte, which limits only by len(chan), use NewBoundedChan to
+// a plain chan []byte, which limits only by len(chan), use NewBoundedQueue to
 // limit both by len *and* the buffers’ total size.
 //
 // The total-size limitation is a “soft” limit: we receive items until the
@@ -50,19 +50,18 @@ type boundedChanWorker[T any] struct {
 // NOTE: The returned channels are unbuffered and WILL NOT reflect current
 // usage. Use the returned stats function for lock-free stats queries.
 //
-// Context cancellation will cause the read-from channel to close immediately,
-// even if there are still items waiting to be read. Thus, if the context is
-// canceled while there are items in the buffer, those items will be discarded
-// rather than sent.
+// Context cancellation/expiry will cause the queue to shut down immediately,
+// even if there are still items waiting to be read. In this case, those items
+// may be discarded rather than sent, even if the reader is still receiving.
 //
 // This panics if maxCount or maxTotalSize is nonpositive, if size is nil, or
 // if size returns a negative value for any item.
-func NewBoundedChan[T any](
+func NewBoundedQueue[T any](
 	ctx context.Context,
 	maxCount int,
 	maxTotalSize int64,
 	size func(T) int64,
-) (<-chan T, chan<- T, func() BoundedChanStats) {
+) (<-chan T, chan<- T, func() BoundedQueueStats) {
 	lo.Assertf(
 		maxCount > 0,
 		"maxCount (%d) must be positive",
@@ -83,7 +82,7 @@ func NewBoundedChan[T any](
 	in := make(chan T)
 	out := make(chan T)
 
-	w := &boundedChanWorker[T]{
+	w := &boundedQueueWorker[T]{
 		in:       in,
 		out:      out,
 		buf:      ringbuf.New[bufferedItem[T]](maxCount),
@@ -94,8 +93,8 @@ func NewBoundedChan[T any](
 
 	go w.run(ctx)
 
-	statsFn := func() BoundedChanStats {
-		return BoundedChanStats{
+	statsFn := func() BoundedQueueStats {
+		return BoundedQueueStats{
 			BufferedItems: w.buf.Len(),
 			BufferedBytes: w.curMem.Load(),
 			MaxItems:      maxCount,
@@ -106,7 +105,7 @@ func NewBoundedChan[T any](
 	return out, in, statsFn
 }
 
-func (w *boundedChanWorker[T]) run(ctx context.Context) {
+func (w *boundedQueueWorker[T]) run(ctx context.Context) {
 	defer close(w.out)
 
 	for w.processItems(ctx) {
@@ -115,28 +114,16 @@ func (w *boundedChanWorker[T]) run(ctx context.Context) {
 
 // Returns false to indicate that all work is done: the input channel
 // is closed, and the buffer is drained.
-func (w *boundedChanWorker[T]) processItems(ctx context.Context) bool {
+func (w *boundedQueueWorker[T]) processItems(ctx context.Context) bool {
 	if w.buf.Len() == 0 {
 		return w.receiveItem(ctx)
 	}
 	return w.receiveOrSend(ctx)
 }
 
-// Called when the buffer is nonempty.
-// Returns false to indicate that the queue should shut down.
-func (w *boundedChanWorker[T]) receiveOrSend(ctx context.Context) bool {
-	// If the memory or count limits constrain us, we must drain (send)
-	// before receiving more.
-	if w.buf.Len() == w.maxCount || w.curMem.Load() >= w.maxMem {
-		return w.drainOne(ctx)
-	}
-
-	return w.receiveOrSendNormal(ctx)
-}
-
 // Called when the buffer is empty.
 // Returns false to indicate that the queue should shut down.
-func (w *boundedChanWorker[T]) receiveItem(ctx context.Context) bool {
+func (w *boundedQueueWorker[T]) receiveItem(ctx context.Context) bool {
 	select {
 	case <-ctx.Done():
 		return false
@@ -149,14 +136,38 @@ func (w *boundedChanWorker[T]) receiveItem(ctx context.Context) bool {
 	}
 }
 
+// Called when the buffer is nonempty.
+// Returns false to indicate that the queue should shut down.
+func (w *boundedQueueWorker[T]) receiveOrSend(ctx context.Context) bool {
+	// If the memory or count limits constrain us, we must drain (send)
+	// before receiving more.
+	if w.buf.Len() == w.maxCount || w.curMem.Load() >= w.maxMem {
+		return w.drainOne(ctx)
+	}
+
+	return w.receiveOrSendNormal(ctx)
+}
+
+func (w *boundedQueueWorker[T]) drainOne(ctx context.Context) bool {
+	entry := w.buf.Peek()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case w.out <- entry.item:
+		w.pop()
+		return true
+	}
+}
+
 // receiveOrSendNormal handles the normal case when below the count limit.
-func (w *boundedChanWorker[T]) receiveOrSendNormal(ctx context.Context) bool {
+func (w *boundedQueueWorker[T]) receiveOrSendNormal(ctx context.Context) bool {
 	select {
 	case <-ctx.Done():
 		return false
 	case itemIn, ok := <-w.in:
 		if !ok {
-			w.flushRemaining()
+			w.flushRemaining(ctx)
 			return false
 		}
 		w.push(itemIn)
@@ -167,7 +178,20 @@ func (w *boundedChanWorker[T]) receiveOrSendNormal(ctx context.Context) bool {
 	}
 }
 
-func (w *boundedChanWorker[T]) itemSize(item T) int64 {
+func (w *boundedQueueWorker[T]) flushRemaining(ctx context.Context) {
+	for w.buf.Len() > 0 {
+		entry := w.buf.Peek()
+
+		select {
+		case <-ctx.Done():
+			return
+		case w.out <- entry.item:
+			w.pop()
+		}
+	}
+}
+
+func (w *boundedQueueWorker[T]) itemSize(item T) int64 {
 	size := w.size(item)
 
 	lo.Assertf(
@@ -180,35 +204,15 @@ func (w *boundedChanWorker[T]) itemSize(item T) int64 {
 }
 
 // push computes size once and stores it with the item.
-func (w *boundedChanWorker[T]) push(item T) {
+func (w *boundedQueueWorker[T]) push(item T) {
 	sz := w.itemSize(item)
 	w.buf.Push(bufferedItem[T]{item: item, size: sz})
 	w.curMem.Add(sz)
 }
 
 // pop removes the next item from the buffer and updates curMem using the precomputed size.
-func (w *boundedChanWorker[T]) pop() {
+func (w *boundedQueueWorker[T]) pop() {
 	entry := w.buf.Peek()
 	w.curMem.Add(-entry.size)
 	w.buf.Pop()
-}
-
-func (w *boundedChanWorker[T]) drainOne(ctx context.Context) bool {
-	entry := w.buf.Peek()
-
-	select {
-	case <-ctx.Done():
-		return false
-	case w.out <- entry.item:
-		w.pop()
-		return true
-	}
-}
-
-func (w *boundedChanWorker[T]) flushRemaining() {
-	for w.buf.Len() > 0 {
-		entry := w.buf.Peek()
-		w.out <- entry.item
-		w.pop()
-	}
 }

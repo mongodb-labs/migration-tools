@@ -15,16 +15,16 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type boundedChanTestSuite struct {
+type boundedQueueTestSuite struct {
 	suite.Suite
 }
 
-func TestBoundedChanTestSuite(t *testing.T) {
-	suite.Run(t, &boundedChanTestSuite{})
+func TestBoundedQueueTestSuite(t *testing.T) {
+	suite.Run(t, &boundedQueueTestSuite{})
 }
 
-func (s *boundedChanTestSuite) TestBasicSendReceive() {
-	out, in, _ := NewBoundedChan(s.T().Context(), 10, 1000, func(int) int64 { return 1 })
+func (s *boundedQueueTestSuite) TestBasicSendReceive() {
+	out, in, _ := NewBoundedQueue(s.T().Context(), 10, 1000, func(int) int64 { return 1 })
 
 	// Send a few items
 	for i := range 5 {
@@ -43,9 +43,9 @@ func (s *boundedChanTestSuite) TestBasicSendReceive() {
 	s.Assert().False(ok)
 }
 
-func (s *boundedChanTestSuite) TestCountLimitEnforced() {
+func (s *boundedQueueTestSuite) TestCountLimitEnforced() {
 	maxCount := 3
-	out, in, _ := NewBoundedChan(s.T().Context(), maxCount, 10000, func(int) int64 { return 1 })
+	out, in, _ := NewBoundedQueue(s.T().Context(), maxCount, 10000, func(int) int64 { return 1 })
 
 	// Send maxCount + 1 items in a goroutine to avoid deadlock
 	go func() {
@@ -66,7 +66,7 @@ func (s *boundedChanTestSuite) TestCountLimitEnforced() {
 	}
 }
 
-func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
+func (s *boundedQueueTestSuite) TestMemoryLimitEnforced() {
 	// maxCount is high (won't trigger); only memory limit should block.
 	// Each item costs <= 20 bytes, maxMem=60. That max is a soft limit: we can
 	// exceed it, but not by more than 1 item’s size. So the channel should
@@ -78,7 +78,7 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	// Without enforcement: peak could reach 100 × 20 = 2000.
 	const maxMem = 60
 	const maxItemSize = 20
-	out, in, stats := NewBoundedChan(
+	out, in, stats := NewBoundedQueue(
 		s.T().Context(),
 		100,
 		maxMem,
@@ -122,8 +122,8 @@ func (s *boundedChanTestSuite) TestMemoryLimitEnforced() {
 	)
 }
 
-func (s *boundedChanTestSuite) TestInputChannelClosed() {
-	out, in, _ := NewBoundedChan(s.T().Context(), 10, 1000, func(int) int64 { return 1 })
+func (s *boundedQueueTestSuite) TestInputChannelClosed() {
+	out, in, _ := NewBoundedQueue(s.T().Context(), 10, 1000, func(int) int64 { return 1 })
 
 	// Send some items and close
 	in <- 1
@@ -137,10 +137,10 @@ func (s *boundedChanTestSuite) TestInputChannelClosed() {
 	s.Assert().Equal([]int{1, 2, 3}, items)
 }
 
-func (s *boundedChanTestSuite) TestOversizedItem() {
+func (s *boundedQueueTestSuite) TestOversizedItem() {
 	// A single item larger than maxMem should still pass through.
 	// The memory limit is temporarily exceeded, then restored after drain.
-	out, in, stats := NewBoundedChan(s.T().Context(), 10, 50, func(i int) int64 { return int64(i) })
+	out, in, stats := NewBoundedQueue(s.T().Context(), 10, 50, func(i int) int64 { return int64(i) })
 
 	go func() {
 		in <- 200
@@ -158,14 +158,14 @@ func (s *boundedChanTestSuite) TestOversizedItem() {
 	s.Assert().Equal(int64(0), snap.BufferedBytes)
 }
 
-func (s *boundedChanTestSuite) TestLastItemExceedsMemoryLimit() {
+func (s *boundedQueueTestSuite) TestLastItemExceedsMemoryLimit() {
 	t := s.T()
 
 	// The total-size limit is soft: an item that pushes the total over maxMem
 	// is still accepted, then the worker drains before accepting more.
 	// Here maxMem=50, and we send 30+30=60 which exceeds the limit.
 	// Both items should pass through, and stats should return to zero.
-	out, in, stats := NewBoundedChan(
+	out, in, stats := NewBoundedQueue(
 		s.T().Context(),
 		100,
 		50,
@@ -194,7 +194,7 @@ func (s *boundedChanTestSuite) TestLastItemExceedsMemoryLimit() {
 	afterBlocked := pollStats(
 		s.T(),
 		stats,
-		func(st BoundedChanStats) bool { return st.BufferedItems == 2 },
+		func(st BoundedQueueStats) bool { return st.BufferedItems == 2 },
 	)
 	s.Assert().
 		Equal(2, afterBlocked.BufferedItems, "should have 2 items buffered after blocked send")
@@ -210,9 +210,9 @@ func (s *boundedChanTestSuite) TestLastItemExceedsMemoryLimit() {
 	s.Assert().Equal(int64(0), snap.BufferedBytes)
 }
 
-func (s *boundedChanTestSuite) TestLargeMemoryItems() {
+func (s *boundedQueueTestSuite) TestLargeMemoryItems() {
 	maxMem := int64(100)
-	out, in, _ := NewBoundedChan(
+	out, in, _ := NewBoundedQueue(
 		s.T().Context(),
 		100,
 		maxMem,
@@ -242,8 +242,8 @@ func (s *boundedChanTestSuite) TestLargeMemoryItems() {
 	s.Assert().False(ok)
 }
 
-func (s *boundedChanTestSuite) TestManySmallItems() {
-	out, in, _ := NewBoundedChan(s.T().Context(), 5, 10000, func(int) int64 { return 1 })
+func (s *boundedQueueTestSuite) TestManySmallItems() {
+	out, in, _ := NewBoundedQueue(s.T().Context(), 5, 10000, func(int) int64 { return 1 })
 
 	// Send 100 items through the channel
 	go func() {
@@ -263,8 +263,8 @@ func (s *boundedChanTestSuite) TestManySmallItems() {
 	s.Assert().Equal(100, received)
 }
 
-func (s *boundedChanTestSuite) TestEmptyBuffer() {
-	out, in, _ := NewBoundedChan(s.T().Context(), 10, 1000, func(int) int64 { return 1 })
+func (s *boundedQueueTestSuite) TestEmptyBuffer() {
+	out, in, _ := NewBoundedQueue(s.T().Context(), 10, 1000, func(int) int64 { return 1 })
 
 	// Send and receive immediately
 	in <- 42
@@ -279,9 +279,9 @@ func (s *boundedChanTestSuite) TestEmptyBuffer() {
 	s.Assert().False(ok)
 }
 
-func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
+func (s *boundedQueueTestSuite) TestMemoryAndCountLimitsTogether() {
 	// Limit to 3 items and 50 bytes
-	out, in, _ := NewBoundedChan(s.T().Context(), 3, 50, func(i int) int64 { return int64(i) })
+	out, in, _ := NewBoundedQueue(s.T().Context(), 3, 50, func(i int) int64 { return int64(i) })
 
 	go func() {
 		// Send items: 5, 10, 15 (total 30 bytes, 3 items)
@@ -305,7 +305,7 @@ func (s *boundedChanTestSuite) TestMemoryAndCountLimitsTogether() {
 	s.Assert().Len(items, 5)
 }
 
-func (s *boundedChanTestSuite) TestContextCancellation() {
+func (s *boundedQueueTestSuite) TestContextCancellation() {
 	// Once the context is canceled the output channel should close immediately.
 	// There’s a race here, though: the context won’t always cancel before the
 	// worker starts sending things. To accommodate that, we repeat the test
@@ -318,17 +318,15 @@ func (s *boundedChanTestSuite) TestContextCancellation() {
 		s.T(),
 		func() bool {
 			ctx, cancel := context.WithCancel(s.T().Context())
-			out, in, _ := NewBoundedChan(ctx, 10, 1000, func(int) int64 { return 1 })
+			out, in, _ := NewBoundedQueue(ctx, 10, 1000, func(int) int64 { return 1 })
 
-			// Send some items
-			go func() {
-				for i := range 5 {
-					in <- i
-				}
-				close(in)
-			}()
+			// Send some items.
+			for i := range 5 {
+				in <- i
+			}
+			close(in)
 
-			// Cancel the context before receiving
+			// Cancel the context before reading.
 			cancel()
 
 			// The output channel should close after processing buffered items
@@ -342,8 +340,8 @@ func (s *boundedChanTestSuite) TestContextCancellation() {
 	)
 }
 
-func (s *boundedChanTestSuite) TestZeroItemEdgeCases() {
-	out, in, _ := NewBoundedChan(s.T().Context(), 10, 1000, func(int) int64 {
+func (s *boundedQueueTestSuite) TestZeroItemEdgeCases() {
+	out, in, _ := NewBoundedQueue(s.T().Context(), 10, 1000, func(int) int64 {
 		// Return 0 for size
 		return 0
 	})
@@ -366,10 +364,10 @@ func (s *boundedChanTestSuite) TestZeroItemEdgeCases() {
 	s.Assert().Equal(100, received)
 }
 
-func (s *boundedChanTestSuite) TestConcurrentStatsReads() {
+func (s *boundedQueueTestSuite) TestConcurrentStatsReads() {
 	// Verify stats function is safe for concurrent reads while channel operates.
 	// This tests atomic-safe access to both ringbuf.Len() and curMem.
-	out, in, stats := NewBoundedChan(
+	out, in, stats := NewBoundedQueue(
 		s.T().Context(),
 		10,
 		1000,
@@ -388,7 +386,7 @@ func (s *boundedChanTestSuite) TestConcurrentStatsReads() {
 }
 
 // startStatsReaders launches multiple goroutines that concurrently read stats.
-func startStatsReaders(stats func() BoundedChanStats, done chan struct{}) *atomic.Int64 {
+func startStatsReaders(stats func() BoundedQueueStats, done chan struct{}) *atomic.Int64 {
 	statsCounter := &atomic.Int64{}
 	for range 5 {
 		go statsReaderLoop(stats, done, statsCounter)
@@ -397,7 +395,7 @@ func startStatsReaders(stats func() BoundedChanStats, done chan struct{}) *atomi
 }
 
 // statsReaderLoop continuously reads stats until done is closed.
-func statsReaderLoop(stats func() BoundedChanStats, done chan struct{}, counter *atomic.Int64) {
+func statsReaderLoop(stats func() BoundedQueueStats, done chan struct{}, counter *atomic.Int64) {
 	for {
 		select {
 		case <-done:
@@ -414,7 +412,7 @@ func statsReaderLoop(stats func() BoundedChanStats, done chan struct{}, counter 
 
 // isValidSnapshot verifies that a stats snapshot is within expected bounds.
 // IMPORTANT: This is valid ONLY where no over-limit buffering can happen.
-func isValidSnapshot(snap BoundedChanStats) bool {
+func isValidSnapshot(snap BoundedQueueStats) bool {
 	return snap.BufferedItems >= 0 && snap.BufferedItems <= snap.MaxItems &&
 		snap.BufferedBytes >= 0 && snap.BufferedBytes <= snap.MaxBytes
 }
@@ -438,9 +436,9 @@ func consumeItems(out <-chan int) int {
 	return received
 }
 
-func (s *boundedChanTestSuite) TestStatsAccuracy() {
+func (s *boundedQueueTestSuite) TestStatsAccuracy() {
 	// Verify stats reflect actual buffer state at snapshot time.
-	out, in, stats := NewBoundedChan(
+	out, in, stats := NewBoundedQueue(
 		s.T().Context(),
 		5,
 		1000,
@@ -459,7 +457,7 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 		close(sentDone)
 	}()
 
-	snap := pollStats(s.T(), stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
+	snap := pollStats(s.T(), stats, func(st BoundedQueueStats) bool { return st.BufferedItems == 3 })
 	s.Assert().Equal(3, snap.BufferedItems)
 	s.Assert().Equal(int64(6), snap.BufferedBytes)
 	s.Assert().Equal(5, snap.MaxItems)
@@ -477,7 +475,7 @@ func (s *boundedChanTestSuite) TestStatsAccuracy() {
 	s.Assert().Equal(int64(0), snap.BufferedBytes)
 }
 
-func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
+func (s *boundedQueueTestSuite) TestSizeComputedOncePerItem() {
 	// Verify that size is computed once on receipt and reused on drain.
 	// Count size() invocations directly so the test deterministically fails if
 	// size() is called more than once per item.
@@ -487,7 +485,7 @@ func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 		return int64(i + 1)
 	}
 
-	out, in, stats := NewBoundedChan(s.T().Context(), 10, 1000, sizeFunc)
+	out, in, stats := NewBoundedQueue(s.T().Context(), 10, 1000, sizeFunc)
 
 	// Send items
 	go func() {
@@ -516,10 +514,10 @@ func (s *boundedChanTestSuite) TestSizeComputedOncePerItem() {
 // pollStats polls until the given predicate is true, checking stats repeatedly.
 func pollStats(
 	t *testing.T,
-	stats func() BoundedChanStats,
-	predicate func(BoundedChanStats) bool,
-) BoundedChanStats {
-	var snap BoundedChanStats
+	stats func() BoundedQueueStats,
+	predicate func(BoundedQueueStats) bool,
+) BoundedQueueStats {
+	var snap BoundedQueueStats
 
 	require.Eventually(
 		t,
@@ -534,9 +532,9 @@ func pollStats(
 	return snap
 }
 
-func (s *boundedChanTestSuite) TestCountBoundIsInclusive() {
+func (s *boundedQueueTestSuite) TestCountBoundIsInclusive() {
 	// Verify that maxCount limit is inclusive: we can buffer exactly maxCount items without draining.
-	out, in, stats := NewBoundedChan(s.T().Context(), 3, 1000, func(int) int64 { return 1 })
+	out, in, stats := NewBoundedQueue(s.T().Context(), 3, 1000, func(int) int64 { return 1 })
 
 	sentDone := make(chan struct{})
 	go func() {
@@ -549,7 +547,7 @@ func (s *boundedChanTestSuite) TestCountBoundIsInclusive() {
 	}()
 
 	// Poll until items are buffered or we know sending is done
-	snap := pollStats(s.T(), stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
+	snap := pollStats(s.T(), stats, func(st BoundedQueueStats) bool { return st.BufferedItems == 3 })
 	s.Assert().Equal(3, snap.BufferedItems, "should be able to buffer exactly maxCount items")
 
 	// Wait for sending to complete, then close input and drain
@@ -562,10 +560,10 @@ func (s *boundedChanTestSuite) TestCountBoundIsInclusive() {
 	s.Assert().Zero(snap.BufferedItems)
 }
 
-func (s *boundedChanTestSuite) TestMemoryBelowLimitStaysBuffered() {
+func (s *boundedQueueTestSuite) TestMemoryBelowLimitStaysBuffered() {
 	// Items totaling strictly less than maxMem should all stay buffered.
 	// 10 + 20 + 29 = 59 < maxMem = 60: no forced drain.
-	out, in, stats := NewBoundedChan(
+	out, in, stats := NewBoundedQueue(
 		s.T().Context(),
 		100,
 		60,
@@ -580,7 +578,7 @@ func (s *boundedChanTestSuite) TestMemoryBelowLimitStaysBuffered() {
 		close(sentDone)
 	}()
 
-	snap := pollStats(s.T(), stats, func(st BoundedChanStats) bool { return st.BufferedItems == 3 })
+	snap := pollStats(s.T(), stats, func(st BoundedQueueStats) bool { return st.BufferedItems == 3 })
 	s.Assert().Equal(3, snap.BufferedItems, "should have 3 items")
 	s.Assert().Equal(int64(59), snap.BufferedBytes, "items below maxMem should stay buffered")
 
