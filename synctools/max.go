@@ -30,19 +30,24 @@ func NewAtomicMax[T any](
 }
 
 // Update concurrently checks and sets the new max if it is greater.
-func (a *AtomicMax[T]) Update(val T) {
+// Returns the previous max value (or the zero value of T if there was none).
+func (a *AtomicMax[T]) Update(val T) T {
 	for {
 		currPtr := a.ptr.Load()
 
 		// Dereference currPtr to get the actual value, then call comparer.
 		if currPtr != nil && a.comparer(*currPtr, val) >= 0 {
-			return
+			return *currPtr
 		}
 
 		// Allocate a new unique memory address for the CAS operation
 		newVal := val
 		if a.ptr.CompareAndSwap(currPtr, &newVal) {
-			return
+			if currPtr == nil {
+				var zero T
+				return zero
+			}
+			return *currPtr
 		}
 	}
 }

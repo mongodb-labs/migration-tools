@@ -24,20 +24,33 @@ func (s *atomicMaxTestSuite) TestInitialValue() {
 
 func (s *atomicMaxTestSuite) TestUpdateHigherValue() {
 	am := NewAtomicMax(0, cmp.Compare[int])
-	am.Update(10)
+	prev := am.Update(10)
+	s.Assert().Equal(0, prev, "should return previous max")
 	s.Assert().Equal(10, am.Get())
 }
 
 func (s *atomicMaxTestSuite) TestUpdateLowerValueIgnored() {
 	am := NewAtomicMax(50, cmp.Compare[int])
-	am.Update(25)
+	prev := am.Update(25)
+	s.Assert().Equal(50, prev, "should return current max when update rejected")
 	s.Assert().Equal(50, am.Get())
 }
 
 func (s *atomicMaxTestSuite) TestUpdateEqualValueIgnored() {
 	am := NewAtomicMax(50, cmp.Compare[int])
-	am.Update(50)
+	prev := am.Update(50)
+	s.Assert().Equal(50, prev, "should return current max when update rejected")
 	s.Assert().Equal(50, am.Get())
+}
+
+func (s *atomicMaxTestSuite) TestUpdateReturnsPreviousMaxOnSuccessiveUpdates() {
+	am := NewAtomicMax(0, cmp.Compare[int])
+	s.Assert().Equal(0, am.Update(10))
+	s.Assert().Equal(10, am.Update(20))
+	s.Assert().Equal(20, am.Update(30))
+	s.Assert().Equal(30, am.Update(15)) // rejected, but returns current max
+	s.Assert().Equal(30, am.Update(30)) // equal, also returns current
+	s.Assert().Equal(30, am.Get())
 }
 
 func (s *atomicMaxTestSuite) TestMultipleUpdatesKeepsMax() {
