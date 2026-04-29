@@ -10,6 +10,8 @@ import (
 	"github.com/samber/lo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
@@ -42,6 +44,7 @@ func BootstrapCausalConsistency(
 	resp, err := sess.Client().Database("admin").RunCommand(
 		ctx,
 		bootstrapRequest,
+		options.RunCmd().SetReadPreference(readpref.Primary()),
 	).Raw()
 	if err != nil {
 		// If any shard’s cluster time >= maxTime, the mongos will return a
