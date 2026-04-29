@@ -16,8 +16,8 @@ guarantees are made. Use at your own risk.
 
 Unit tests are written in the usual Go way.
 
-Integration tests MUST include the word `Integration` in the test’s name.
-Call `internal.GetConnStr()` to fetch the connection string for use in your tests.
+Integration tests MUST include the word `Integration` in the test’s name. Call
+`internal.GetConnStr()` to fetch the connection string for use in your tests.
 
 ## Installing dev tools
 

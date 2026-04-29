@@ -51,7 +51,11 @@ func TestIntegration_BootstrapCausalConsistency(t *testing.T) {
 
 	require.NoError(t, BootstrapCausalConsistency(ctx, sess))
 
-	assert.NotZero(t, sess.OperationTime(), "session should have an operation time after bootstrapping")
+	assert.NotZero(
+		t,
+		sess.OperationTime(),
+		"session should have an operation time after bootstrapping",
+	)
 	assert.NotZero(t, sess.ClusterTime(), "session should have a cluster time after bootstrapping")
 
 	// If the session is causally consistent, it should see all 100 documents. If not, it may see fewer.

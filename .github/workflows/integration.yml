@@ -13,12 +13,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mongo_version: ['4.0', '4.2', '4.4', '5.0', '6.0', '7.0', '8.0']
+        mongo_version: ["4.0", "4.2", "4.4", "5.0", "6.0", "7.0", "8.0"]
         topology:
           - name: replset
-            args: '--replicaset'
+            args: "--replicaset"
           - name: sharded
-            args: '--sharded 2 --replicaset'
+            args: "--sharded 2 --replicaset"
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
