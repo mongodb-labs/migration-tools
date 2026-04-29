@@ -12,11 +12,16 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readconcern"
+	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
 )
 
 func TestIntegration_BootstrapCausalConsistency(t *testing.T) {
 	legacytools.SetDriverCompatibility("4.0")
+
+	if internal.GetTopology(t) == "sharded" && internal.GetDBVersion(t) == "4.0" {
+		t.Skip("4.0 sharded clusters lacked appendOplogNote. See https://jira.mongodb.org/browse/SERVER-38889.")
+	}
 
 	ctx := t.Context()
 
@@ -42,10 +47,14 @@ func TestIntegration_BootstrapCausalConsistency(t *testing.T) {
 	}
 
 	// Don’t check this for success since in old server versions it failed.
-	_ = client.Database("admin").RunCommand(ctx, bson.D{
-		{"replSetStepDown", 1},
-		{"force", true},
-	})
+	_ = client.Database("admin").RunCommand(
+		ctx,
+		bson.D{
+			{"replSetStepDown", 1},
+			{"force", true},
+		},
+		options.RunCmd().SetReadPreference(readpref.Primary()),
+	)
 
 	sess, err := client.StartSession()
 	require.NoError(t, err, "start session")

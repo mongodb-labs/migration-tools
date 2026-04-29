@@ -64,6 +64,8 @@ jobs:
       - name: Run integration tests
         env:
           MIGRATION_TOOLS_MONGODB_URI: ${{ steps.conn.outputs.uri }}
+          MIGRATION_TOOLS_MONGODB_TOPOLOGY: ${{ matrix.topology.name }}
+          MIGRATION_TOOLS_MONGODB_VERSION: ${{ matrix.mongo_version }}
         run: go test -v -run Integration ./...
 
       - name: Show MongoDB logs on failure
