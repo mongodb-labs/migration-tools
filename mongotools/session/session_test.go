@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/mongodb-labs/migration-tools/internal"
@@ -18,10 +17,7 @@ import (
 func TestIntegration_BootstrapCausalConsistency(t *testing.T) {
 	ctx := t.Context()
 
-	uri := os.Getenv(internal.ConnStrEnv)
-	if uri == "" {
-		t.Skipf("%#q not set", internal.ConnStrEnv)
-	}
+	uri := internal.GetConnStr(t)
 
 	client, err := mongo.Connect(options.Client().ApplyURI(uri))
 	require.NoError(t, err, "connect client")

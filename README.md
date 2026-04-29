@@ -12,6 +12,13 @@ guarantees are made. Use at your own risk.
   except to give examples.
 - Document thoroughly, preferably with example code.
 
+### Tests
+
+Unit tests are written in the usual Go way.
+
+Integration tests MUST include the word `Integration` in the test’s name.
+Call `internal.GetConnStr()` to fetch the connection string for use in your tests.
+
 ## Installing dev tools
 
 This repo uses [`mise`](https://mise.jdx.dev/) for managing dev tools. After you install `mise`, run
