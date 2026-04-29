@@ -18,6 +18,12 @@ const (
 	dollarClusterTime         = "$clusterTime"
 )
 
+// BootstrapCausalConsistency performs an appendOplogNote command to advance
+// the cluster’s operation & cluster times. It then advances the session’s
+// to match those new times.
+//
+// This is a simple means to causal consistency without persisting session
+// state.
 func BootstrapCausalConsistency(
 	ctx context.Context,
 	sess *mongo.Session,
@@ -55,6 +61,7 @@ func BootstrapCausalConsistency(
 		return fmt.Errorf("read %q in server response: %w", dollarClusterTime, err)
 	}
 
+	// The driver’s cluster-time interfaces return & expect this wrapped form.
 	clusterTime := bson.Raw(
 		bsoncore.BuildDocumentFromElements(
 			nil,
