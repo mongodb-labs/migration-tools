@@ -21,15 +21,19 @@ const (
 	dollarClusterTime         = "$clusterTime"
 )
 
-var bootstrapRequest = lo.Must(bson.Marshal(
-	bson.D{
-		{"appendOplogNote", 1},
-		{"data", bson.D{
-			{"bootstrap", true},
-		}},
-		{"writeConcern", bson.D{{"w", "majority"}}},
-	},
-))
+var (
+	bootstrapRequest = lo.Must(bson.Marshal(
+		bson.D{
+			{"appendOplogNote", 1},
+			{"data", bson.D{
+				{"bootstrap", true},
+			}},
+			{"writeConcern", bson.D{{"w", "majority"}}},
+		},
+	))
+
+	runCmdReadPref = options.RunCmd().SetReadPreference(readpref.Primary())
+)
 
 // BootstrapCausalConsistency performs an appendOplogNote command to advance
 // the cluster’s operation & cluster times. It then advances the session’s
@@ -44,7 +48,7 @@ func BootstrapCausalConsistency(
 	resp, err := sess.Client().Database("admin").RunCommand(
 		ctx,
 		bootstrapRequest,
-		options.RunCmd().SetReadPreference(readpref.Primary()),
+		runCmdReadPref,
 	).Raw()
 	if err != nil {
 		// If any shard’s cluster time >= maxTime, the mongos will return a
