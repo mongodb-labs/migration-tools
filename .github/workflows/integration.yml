@@ -1,0 +1,71 @@
+name: Integration
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  integration:
+    name: ${{ matrix.mongo_version }} ${{ matrix.topology.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mongo_version: ['4.0', '4.2', '4.4', '5.0', '6.0', '7.0', '8.0']
+        topology:
+          - name: replset
+            args: '--replicaset'
+          - name: sharded
+            args: '--sharded 2 --replicaset'
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Install tools with `mise`
+        uses: jdx/mise-action@v3
+        with:
+          # This matches what we use in the mongosync and mongo-tools repos.
+          version: 2026.2.19
+
+      - name: Start MongoDB cluster
+        run: |
+          docker run \
+            --network host \
+            --name mongo \
+            --detach \
+            --rm \
+            felipegasper298/mongo-provision \
+            ${{ matrix.mongo_version }} \
+            ${{ matrix.topology.args }}
+
+      - name: Wait for cluster readiness
+        run: |
+          for i in $(seq 1 120); do
+            if docker exec mongo test -f /ready; then
+              echo "Cluster ready after ${i} attempts"
+              exit 0
+            fi
+            echo "Waiting for cluster... (${i}/120)"
+            sleep 5
+          done
+          echo "Cluster did not become ready in time"
+          docker logs mongo
+          exit 1
+
+      - name: Extract connection string
+        id: conn
+        run: |
+          uri=$(docker exec mongo cat /ready | jq -r .connection_string)
+          echo "uri=${uri}" >> "$GITHUB_OUTPUT"
+          echo "Connection string: ${uri}"
+
+      - name: Run integration tests
+        env:
+          MIGRATION_TOOLS_MONGODB_URI: ${{ steps.conn.outputs.uri }}
+        run: go test -v -run TestBootstrapCausalConsistency ./mongotools/session/...
+
+      - name: Show MongoDB logs on failure
+        if: failure()
+        run: docker logs mongo
