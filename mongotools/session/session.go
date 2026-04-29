@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	staleClusterTimeErrCode   = 209
 	notWritablePrimaryErrCode = 10107
 	opTimeKeyInServerResponse = "operationTime"
 	dollarClusterTime         = "$clusterTime"
@@ -65,13 +64,6 @@ func BootstrapCausalConsistency(
 		}
 
 		errCodes := mongo.ErrorCodes(err)
-
-		// If any shard’s cluster time >= maxTime, the mongos will return a
-		// StaleClusterTime error. This particular error doesn’t indicate a
-		// failure, so we ignore it.
-		if slices.Contains(errCodes, staleClusterTimeErrCode) {
-			break
-		}
 
 		if slices.Contains(errCodes, notWritablePrimaryErrCode) {
 			if err := timer.SleepCause(ctx, time.Second); err != nil {
