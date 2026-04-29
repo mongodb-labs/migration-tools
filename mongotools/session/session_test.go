@@ -20,7 +20,7 @@ func TestIntegration_BootstrapCausalConsistency(t *testing.T) {
 	legacytools.SetDriverCompatibility("4.0")
 
 	if internal.GetTopology(t) == "sharded" && internal.GetDBVersion(t) == "4.0" {
-		t.Skip("4.0 sharded clusters lacked appendOplogNote. See https://jira.mongodb.org/browse/SERVER-38889.")
+		t.Skip("4.0 sharded clusters lacked appendOplogNote.")
 	}
 
 	ctx := t.Context()
