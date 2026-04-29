@@ -38,6 +38,14 @@ var bootstrapRequest = lo.Must(bson.Marshal(
 //
 // This is a simple means to causal consistency without persisting session
 // state.
+//
+// This function internally retries the appendOplogNote command if it
+// encounters a NotWritablePrimary error, which can occur if the command is
+// routed to a secondary that hasn’t yet learned of the new primary. It also
+// ignores StaleClusterTime errors, which can occur if any shard’s cluster time
+// is >= the maxTime specified in the command. This is because such an error
+// doesn’t indicate a failure of the command, but rather that the cluster time
+// has already advanced past the time of the note we attempted to append.
 func BootstrapCausalConsistency(
 	ctx context.Context,
 	sess *mongo.Session,
@@ -50,6 +58,8 @@ func BootstrapCausalConsistency(
 			ctx,
 			bootstrapRequest,
 		).Raw()
+
+		// Success? Yay.
 		if err == nil {
 			break
 		}
@@ -71,11 +81,7 @@ func BootstrapCausalConsistency(
 			continue
 		}
 
-		if err != nil {
-			return fmt.Errorf("appendOplogNote: %w", err)
-		}
-
-		break
+		return fmt.Errorf("appendOplogNote: %w", err)
 	}
 
 	opTime, err := bsontools.RawLookup[bson.Timestamp](resp, opTimeKeyInServerResponse)
