@@ -5,35 +5,32 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
+	"github.com/goaux/timer"
 	"github.com/mongodb-labs/migration-tools/bsontools"
 	"github.com/samber/lo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
-	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
 const (
 	staleClusterTimeErrCode   = 209
+	notWritablePrimaryErrCode = 10107
 	opTimeKeyInServerResponse = "operationTime"
 	dollarClusterTime         = "$clusterTime"
 )
 
-var (
-	bootstrapRequest = lo.Must(bson.Marshal(
-		bson.D{
-			{"appendOplogNote", 1},
-			{"data", bson.D{
-				{"bootstrap", true},
-			}},
-			{"writeConcern", bson.D{{"w", "majority"}}},
-		},
-	))
-
-	runCmdReadPref = options.RunCmd().SetReadPreference(readpref.Primary())
-)
+var bootstrapRequest = lo.Must(bson.Marshal(
+	bson.D{
+		{"appendOplogNote", 1},
+		{"data", bson.D{
+			{"bootstrap", true},
+		}},
+		{"writeConcern", bson.D{{"w", "majority"}}},
+	},
+))
 
 // BootstrapCausalConsistency performs an appendOplogNote command to advance
 // the cluster’s operation & cluster times. It then advances the session’s
@@ -45,18 +42,40 @@ func BootstrapCausalConsistency(
 	ctx context.Context,
 	sess *mongo.Session,
 ) error {
-	resp, err := sess.Client().Database("admin").RunCommand(
-		ctx,
-		bootstrapRequest,
-		runCmdReadPref,
-	).Raw()
-	if err != nil {
+	var resp bson.Raw
+	var err error
+
+	for range 5 {
+		resp, err := sess.Client().Database("admin").RunCommand(
+			ctx,
+			bootstrapRequest,
+		).Raw()
+		if err == nil {
+			break
+		}
+
+		errCodes := mongo.ErrorCodes(err)
+
 		// If any shard’s cluster time >= maxTime, the mongos will return a
 		// StaleClusterTime error. This particular error doesn’t indicate a
 		// failure, so we ignore it.
-		if !slices.Contains(mongo.ErrorCodes(err), staleClusterTimeErrCode) {
+		if slices.Contains(errCodes, staleClusterTimeErrCode) {
+			break
+		}
+
+		if slices.Contains(errCodes, notWritablePrimaryErrCode) {
+			if err := timer.SleepCause(ctx, time.Second); err != nil {
+				return err
+			}
+
+			continue
+		}
+
+		if err != nil {
 			return fmt.Errorf("appendOplogNote: %w", err)
 		}
+
+		break
 	}
 
 	opTime, err := bsontools.RawLookup[bson.Timestamp](resp, opTimeKeyInServerResponse)
