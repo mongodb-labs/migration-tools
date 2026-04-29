@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/mongodb-labs/migration-tools/bsontools"
+	"github.com/samber/lo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
@@ -17,6 +18,16 @@ const (
 	opTimeKeyInServerResponse = "operationTime"
 	dollarClusterTime         = "$clusterTime"
 )
+
+var bootstrapRequest = lo.Must(bson.Marshal(
+	bson.D{
+		{"appendOplogNote", 1},
+		{"data", bson.D{
+			{"bootstrap", true},
+		}},
+		{"writeConcern", bson.D{{"w", "majority"}}},
+	},
+))
 
 // BootstrapCausalConsistency performs an appendOplogNote command to advance
 // the cluster’s operation & cluster times. It then advances the session’s
@@ -30,13 +41,7 @@ func BootstrapCausalConsistency(
 ) error {
 	resp, err := sess.Client().Database("admin").RunCommand(
 		ctx,
-		bson.D{
-			{"appendOplogNote", 1},
-			{"data", bson.D{
-				{"bootstrap", true},
-			}},
-			{"writeConcern", bson.D{{"w", "majority"}}},
-		},
+		bootstrapRequest,
 	).Raw()
 	if err != nil {
 		// If any shard’s cluster time >= maxTime, the mongos will return a
