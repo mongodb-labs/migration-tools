@@ -36,7 +36,7 @@ var bootstrapRequest = lo.Must(bson.Marshal(
 // the cluster’s operation & cluster times. It then advances the session’s
 // to match those new times.
 //
-// This is a simple means to causal consistency without persisting session
+// This is a simple path to causal consistency without persisting session
 // state.
 //
 // This function internally retries the appendOplogNote command if it
