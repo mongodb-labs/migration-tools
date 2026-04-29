@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mongodb-labs/migration-tools/internal"
+	"github.com/mongodb-labs/migration-tools/legacytools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -15,6 +16,8 @@ import (
 )
 
 func TestIntegration_BootstrapCausalConsistency(t *testing.T) {
+	legacytools.SetDriverCompatibility("4.0")
+
 	ctx := t.Context()
 
 	uri := internal.GetConnStr(t)
