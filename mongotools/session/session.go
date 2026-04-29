@@ -37,6 +37,7 @@ var bootstrapRequest = lo.Must(bson.Marshal(
 // to match those new times.
 //
 // This is a simple path to causal consistency across application restarts.
+// It works with all 4.2+ clusters as well as 4.0 replica sets.
 //
 // This function internally retries the appendOplogNote command if it
 // encounters a NotWritablePrimary error, which can occur if the command is
