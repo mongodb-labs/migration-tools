@@ -46,7 +46,7 @@ func BootstrapCausalConsistency(
 	var err error
 
 	for range 5 {
-		resp, err := sess.Client().Database("admin").RunCommand(
+		resp, err = sess.Client().Database("admin").RunCommand(
 			ctx,
 			bootstrapRequest,
 		).Raw()
