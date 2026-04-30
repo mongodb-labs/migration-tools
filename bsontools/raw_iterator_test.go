@@ -1,12 +1,70 @@
 package bsontools
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
+
+// TestNewRawIteratorEmpty verifies that an empty buffer is rejected with a
+// wrapped InsufficientBytesError and a message indicating emptiness.
+func TestNewRawIteratorEmpty(t *testing.T) {
+	_, err := NewRawIterator(bson.Raw{})
+	require.Error(t, err)
+	assert.ErrorAs(t, err, &bsoncore.InsufficientBytesError{})
+	assert.ErrorContains(t, err, "empty")
+
+	_, err = NewRawIterator(bson.Raw(nil))
+	require.Error(t, err)
+	assert.ErrorAs(t, err, &bsoncore.InsufficientBytesError{})
+	assert.ErrorContains(t, err, "empty")
+}
+
+// TestNewRawIteratorShortBuffer verifies that a buffer too short to hold the
+// 4-byte length header is rejected with a wrapped InsufficientBytesError.
+func TestNewRawIteratorShortBuffer(t *testing.T) {
+	_, err := NewRawIterator(bson.Raw{0, 1, 2})
+	require.Error(t, err)
+	assert.ErrorAs(t, err, &bsoncore.InsufficientBytesError{})
+	assert.ErrorContains(t, err, "3 bytes long")
+}
+
+// TestNewRawIteratorLengthMismatch verifies that a declared document length
+// not matching the actual buffer length is rejected.
+func TestNewRawIteratorLengthMismatch(t *testing.T) {
+	doc := bson.D{{"foo", "bar"}}
+	raw, err := bson.Marshal(doc)
+	require.NoError(t, err)
+
+	t.Run("buffer truncated", func(t *testing.T) {
+		_, err := NewRawIterator(raw[:len(raw)-1])
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "declared document length")
+		assert.ErrorContains(t, err, "actual buffer length")
+	})
+
+	t.Run("buffer extended", func(t *testing.T) {
+		extended := append([]byte{}, raw...)
+		extended = append(extended, 0x00)
+		_, err := NewRawIterator(extended)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "declared document length")
+		assert.ErrorContains(t, err, "actual buffer length")
+	})
+
+	t.Run("declared length lies", func(t *testing.T) {
+		// Take a valid doc and overwrite the length header with a wrong value.
+		tampered := append([]byte{}, raw...)
+		binary.LittleEndian.PutUint32(tampered, uint32(len(raw)+100))
+		_, err := NewRawIterator(tampered)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "declared document length")
+	})
+}
 
 // TestRawIteratorNoAllocs verifies that the happy-path iteration of a
 // RawIterator over a multi-field document does not heap-allocate. The
