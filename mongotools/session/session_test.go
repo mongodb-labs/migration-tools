@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/mongodb-labs/migration-tools/internal"
 	"github.com/mongodb-labs/migration-tools/legacytools"
@@ -61,7 +62,22 @@ func TestIntegration_BootstrapCausalConsistency(t *testing.T) {
 
 	defer sess.EndSession(ctx)
 
-	require.NoError(t, BootstrapCausalConsistency(ctx, sess))
+	require.Eventually(
+		t,
+		func() bool {
+			err := BootstrapCausalConsistency(ctx, sess)
+
+			if err == nil {
+				return true
+			}
+
+			t.Logf("Bootstrap attempt failed (%v); may retry", err)
+			return false
+		},
+		time.Minute,
+		time.Second,
+		"bootstrap should eventually succeed",
+	)
 
 	assert.NotZero(
 		t,

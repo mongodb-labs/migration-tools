@@ -4,10 +4,7 @@ package session
 import (
 	"context"
 	"fmt"
-	"slices"
-	"time"
 
-	"github.com/goaux/timer"
 	"github.com/mongodb-labs/migration-tools/bsontools"
 	"github.com/samber/lo"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -16,7 +13,6 @@ import (
 )
 
 const (
-	notWritablePrimaryErrCode = 10107
 	opTimeKeyInServerResponse = "operationTime"
 	dollarClusterTime         = "$clusterTime"
 )
@@ -38,41 +34,18 @@ var bootstrapRequest = lo.Must(bson.Marshal(
 // This is a simple path to causal consistency across application restarts.
 // It works with all 4.2+ clusters as well as 4.0 replica sets.
 //
-// This function internally retries the appendOplogNote command if it
-// encounters a NotWritablePrimary error, which can occur if the command is
-// routed to a secondary that hasn’t yet learned of the new primary. It also
-// ignores StaleClusterTime errors, which can occur if any shard’s cluster time
-// is >= the maxTime specified in the command. This is because such an error
-// doesn’t indicate a failure of the command, but rather that the cluster time
-// has already advanced past the time of the note we attempted to append.
+// NB: This does not retry if `appendOplogNote` fails. Applications should
+// apply their own retry logic around this function, as the command may fail
+// if the cluster is under load or experiencing failover.
 func BootstrapCausalConsistency(
 	ctx context.Context,
 	sess *mongo.Session,
 ) error {
-	var resp bson.Raw
-	var err error
-
-	for range 5 {
-		resp, err = sess.Client().Database("admin").RunCommand(
-			ctx,
-			bootstrapRequest,
-		).Raw()
-
-		// Success? Yay.
-		if err == nil {
-			break
-		}
-
-		errCodes := mongo.ErrorCodes(err)
-
-		if slices.Contains(errCodes, notWritablePrimaryErrCode) {
-			if err := timer.SleepCause(ctx, time.Second); err != nil {
-				return err
-			}
-
-			continue
-		}
-
+	resp, err := sess.Client().Database("admin").RunCommand(
+		ctx,
+		bootstrapRequest,
+	).Raw()
+	if err != nil {
 		return fmt.Errorf("appendOplogNote: %w", err)
 	}
 
