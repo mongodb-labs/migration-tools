@@ -54,8 +54,8 @@ func CountRawElements[D ~[]byte](doc D) (int, error) {
 // a panic will ensue.
 //
 // NB: Consider RawIterator instead in hot code paths, since it avoids
-// heap-allocating closures. Like this helper, it treats an empty buffer as an
-// empty document.
+// heap-allocating closures and also accepts an empty buffer as a valid empty
+// document, so callers do not need to check for emptiness first.
 func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
 	if len(doc) == 0 {
 		return func(func(bson.RawElement, error) bool) {}
