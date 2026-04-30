@@ -15,6 +15,9 @@ type RawIterator struct {
 }
 
 // NewRawIterator returns a new RawIterator over the given BSON document.
+// Note that this returns a struct literal rather than a pointer so as to
+// avoid an unneeded heap allocation.
+//
 // If the document is too short to contain a BSON document, or if the declared
 // document length mismatches the buffer length, an error is returned.
 func NewRawIterator[D ~[]byte](doc D) (RawIterator, error) {
