@@ -114,7 +114,7 @@ func (o Option[T]) MustGet() T {
 func (o Option[T]) MustGetf(pattern string, args ...any) T {
 	val, exists := o.Get()
 	if !exists {
-		lo.Assertf(exists, pattern, args...)
+		lo.Assertf(false, pattern, args...)
 	}
 
 	return val
