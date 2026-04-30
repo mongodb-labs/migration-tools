@@ -5,7 +5,6 @@ import (
 	"iter"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
 // RawLookup extracts & unmarshals a referent value from a BSON document.
@@ -54,51 +53,29 @@ func CountRawElements[D ~[]byte](doc D) (int, error) {
 // a panic will ensue.
 //
 // NB: Consider RawIterator instead in hot code paths, since it avoids
-// heap-allocating closures and also accepts an empty buffer as a valid empty
-// document, so callers do not need to check for emptiness first.
+// heap-allocating closures.
 func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
-	if len(doc) == 0 {
-		return func(func(bson.RawElement, error) bool) {}
-	}
-
-	if _, rem, ok := bsoncore.ReadLength(doc); !ok {
-		return func(yield func(bson.RawElement, error) bool) {
-			yield(nil, fmt.Errorf(
-				"%w (buffer is only %d bytes long)",
-				bsoncore.NewInsufficientBytesError(doc, rem),
-				len(doc),
-			))
-		}
-	}
-
-	remaining := doc[4:]
-
 	return func(yield func(bson.RawElement, error) bool) {
-		var el bsoncore.Element
-		var ok bool
-
-		for len(remaining) > 1 {
-			el, remaining, ok = bsoncore.ReadElement(remaining)
-
-			var err error
-
-			if !ok {
-				err = bsoncore.NewInsufficientBytesError(doc, remaining)
-			} else {
-				err = el.Validate()
+		yieldErr := func(err error) {
+			if yield(nil, err) {
+				panic(fmt.Sprintf("Must stop iteration after error (%v)", err))
 			}
+		}
 
-			if err != nil {
-				if yield(nil, err) {
-					panic(fmt.Sprintf("Must stop iteration after error (%v)", err))
-				}
+		rawIter, err := NewRawIterator(doc)
+		if err != nil {
+			yieldErr(err)
+			return
+		}
 
+		for el := rawIter.Next(); el != nil; el = rawIter.Next() {
+			if !yield(el, nil) {
 				return
 			}
+		}
 
-			if !yield(bson.RawElement(el), nil) {
-				return
-			}
+		if err := rawIter.Err(); err != nil {
+			yieldErr(err)
 		}
 	}
 }
