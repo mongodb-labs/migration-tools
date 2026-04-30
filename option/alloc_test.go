@@ -101,6 +101,59 @@ func TestFromPointerNoAllocs(t *testing.T) {
 	})
 }
 
+func TestIfNotZeroNoAllocs(t *testing.T) {
+	t.Run("zero int", func(t *testing.T) {
+		assertNoAllocs(t, "IfNotZero[int](0)", func() {
+			_ = IfNotZero(0)
+		})
+	})
+
+	t.Run("non-zero int", func(t *testing.T) {
+		assertNoAllocs(t, "IfNotZero[int](42)", func() {
+			_ = IfNotZero(42)
+		})
+	})
+
+	t.Run("zero string", func(t *testing.T) {
+		assertNoAllocs(t, `IfNotZero[string]("")`, func() {
+			_ = IfNotZero("")
+		})
+	})
+
+	t.Run("non-zero string", func(t *testing.T) {
+		s := "hello"
+		assertNoAllocs(t, "IfNotZero[string](s)", func() {
+			_ = IfNotZero(s)
+		})
+	})
+
+	t.Run("zero largeStruct", func(t *testing.T) {
+		assertNoAllocs(t, "IfNotZero[largeStruct]({})", func() {
+			_ = IfNotZero(largeStruct{})
+		})
+	})
+
+	t.Run("non-zero largeStruct", func(t *testing.T) {
+		v := largeStruct{a: 1, b: 2, c: 3, d: 4, s: "x"}
+		assertNoAllocs(t, "IfNotZero[largeStruct](v)", func() {
+			_ = IfNotZero(v)
+		})
+	})
+
+	t.Run("nil slice", func(t *testing.T) {
+		assertNoAllocs(t, "IfNotZero[[]int](nil)", func() {
+			_ = IfNotZero[[]int](nil)
+		})
+	})
+
+	t.Run("non-nil slice", func(t *testing.T) {
+		s := []int{1, 2, 3}
+		assertNoAllocs(t, "IfNotZero[[]int](s)", func() {
+			_ = IfNotZero(s)
+		})
+	})
+}
+
 func TestOptionMethodsNoAllocs(t *testing.T) {
 	some := Some(42)
 	none := None[int]()
