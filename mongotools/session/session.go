@@ -28,15 +28,15 @@ var bootstrapRequest = lo.Must(bson.Marshal(
 ))
 
 // BootstrapCausalConsistency performs an appendOplogNote command to advance
-// the cluster’s operation & cluster times. It then advances the session’s
+// the cluster’s operation & cluster times. It then advances the given session
 // to match those new times.
 //
 // This is a simple path to causal consistency across application restarts.
 // It works with all 4.2+ clusters as well as 4.0 replica sets.
 //
-// NB: This does not retry if `appendOplogNote` fails. Applications should
-// apply their own retry logic around this function, as the command may fail
-// if the cluster is under load or experiencing failover.
+// NB: This does not retry if `appendOplogNote` fails. Since that command
+// may fail transiently if the cluster is under load or experiencing failover,
+// applications should apply their own retry logic around this function.
 func BootstrapCausalConsistency(
 	ctx context.Context,
 	sess *mongo.Session,
@@ -51,7 +51,7 @@ func BootstrapCausalConsistency(
 
 	opTime, err := bsontools.RawLookup[bson.Timestamp](resp, opTimeKeyInServerResponse)
 	if err != nil {
-		return fmt.Errorf("read %q in server response: %w", opTimeKeyInServerResponse, err)
+		return fmt.Errorf("read %#q in server response: %w", opTimeKeyInServerResponse, err)
 	}
 
 	if err := sess.AdvanceOperationTime(&opTime); err != nil {
@@ -60,7 +60,7 @@ func BootstrapCausalConsistency(
 
 	ctVal, err := resp.LookupErr(dollarClusterTime)
 	if err != nil {
-		return fmt.Errorf("read %q in server response: %w", dollarClusterTime, err)
+		return fmt.Errorf("read %#q in server response: %w", dollarClusterTime, err)
 	}
 
 	// The driver’s cluster-time interfaces return & expect this wrapped form.
