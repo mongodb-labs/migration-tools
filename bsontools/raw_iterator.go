@@ -56,7 +56,18 @@ func (ri *RawIterator) FieldIndex() int {
 
 // Next returns the next element in the iteration, or None if there are no more elements.
 func (ri *RawIterator) Next() (option.Option[bson.RawElement], error) {
-	if len(ri.remaining) <= 1 {
+	if len(ri.remaining) == 0 {
+		return option.None[bson.RawElement](), nil
+	}
+
+	if len(ri.remaining) == 1 {
+		if ri.remaining[0] != 0x00 {
+			return option.None[bson.RawElement](), fmt.Errorf(
+				"invalid BSON document terminator: got 0x%02x, want 0x00",
+				ri.remaining[0],
+			)
+		}
+
 		return option.None[bson.RawElement](), nil
 	}
 
