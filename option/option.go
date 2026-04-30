@@ -27,9 +27,8 @@
 package option
 
 import (
+	"fmt"
 	"reflect"
-
-	"github.com/samber/lo"
 )
 
 // Option represents a possibly-empty value.
@@ -42,11 +41,10 @@ type Option[T any] struct {
 // Some creates an Option with a value.
 func Some[T any](value T) Option[T] {
 	if isNil(value) {
-		lo.Assertf(
-			false,
+		panic(fmt.Sprintf(
 			"Option[%T] forbids nil value",
 			value,
-		)
+		))
 	}
 
 	return Option[T]{true, value}
@@ -66,11 +64,12 @@ func FromPointer[T any](valPtr *T) Option[T] {
 		return None[T]()
 	}
 
-	lo.Assertf(
-		!isNil(*valPtr),
-		"Given %T refers to nil, which is forbidden.",
-		valPtr,
-	)
+	if isNil(*valPtr) {
+		panic(fmt.Sprintf(
+			"Given %T refers to nil, which is forbidden.",
+			valPtr,
+		))
+	}
 
 	return Option[T]{true, *valPtr}
 }
@@ -104,7 +103,7 @@ func (o Option[T]) Get() (T, bool) {
 func (o Option[T]) MustGet() T {
 	val, exists := o.Get()
 	if !exists {
-		lo.Assertf(false, "%T must be nonempty!", o)
+		panic(fmt.Sprintf("%T must be nonempty!", o))
 	}
 
 	return val
@@ -114,7 +113,7 @@ func (o Option[T]) MustGet() T {
 func (o Option[T]) MustGetf(pattern string, args ...any) T {
 	val, exists := o.Get()
 	if !exists {
-		lo.Assertf(false, pattern, args...)
+		panic(fmt.Sprintf(pattern, args...))
 	}
 
 	return val
