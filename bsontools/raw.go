@@ -27,11 +27,8 @@ func RawLookup[T unmarshalTargets, D ~[]byte](in D, pointer ...string) (T, error
 }
 
 // CountRawElements returns a count of the fields in the given BSON document.
+// An empty buffer is treated as zero fields (no error).
 func CountRawElements[D ~[]byte](doc D) (int, error) {
-	if len(doc) == 0 {
-		return 0, nil
-	}
-
 	rawIter, err := NewRawIterator(doc)
 	if err != nil {
 		return 0, err
@@ -39,29 +36,25 @@ func CountRawElements[D ~[]byte](doc D) (int, error) {
 
 	count := 0
 
-	for {
-		el, err := rawIter.Next()
-		if err != nil {
-			return 0, err
-		}
-
-		if el.IsNone() {
-			break
-		}
-
+	for el := rawIter.Next(); el != nil; el = rawIter.Next() {
 		count++
+	}
+
+	if err := rawIter.Err(); err != nil {
+		return 0, err
 	}
 
 	return count, nil
 }
 
-// RawElements returns an iterator over a Raw’s elements.
+// RawElements returns an iterator over a Raw’s elements. If the given slice
+// is empty, the iterator yields no elements.
 //
 // If the iterator returns an error but the caller continues iterating,
 // a panic will ensue.
 //
 // NB: Consider RawIterator instead in hot code paths, since it avoids
-// heap-allocating closures.
+// heap-allocating closures. You’ll need to check for document emptiness first.
 func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
 	if len(doc) == 0 {
 		return func(func(bson.RawElement, error) bool) {}

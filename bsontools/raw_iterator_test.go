@@ -10,18 +10,25 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
 
-// TestNewRawIteratorEmpty verifies that an empty buffer is rejected with a
-// wrapped InsufficientBytesError and a message indicating emptiness.
+// TestNewRawIteratorEmpty verifies that an empty buffer is treated as a
+// valid empty BSON document: no error, no elements yielded. This matches the
+// 5-byte all-NUL canonical empty document.
 func TestNewRawIteratorEmpty(t *testing.T) {
-	_, err := NewRawIterator(bson.Raw{})
-	require.Error(t, err)
-	assert.ErrorAs(t, err, &bsoncore.InsufficientBytesError{})
-	assert.ErrorContains(t, err, "empty")
-
-	_, err = NewRawIterator(bson.Raw(nil))
-	require.Error(t, err)
-	assert.ErrorAs(t, err, &bsoncore.InsufficientBytesError{})
-	assert.ErrorContains(t, err, "empty")
+	for _, tc := range []struct {
+		name string
+		doc  bson.Raw
+	}{
+		{"nil slice", bson.Raw(nil)},
+		{"zero-length slice", bson.Raw{}},
+		{"5-byte all NUL", bson.Raw{0x05, 0, 0, 0, 0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			iter, err := NewRawIterator(tc.doc)
+			require.NoError(t, err)
+			assert.Nil(t, iter.Next(), "no elements expected")
+			assert.NoError(t, iter.Err())
+		})
+	}
 }
 
 // TestNewRawIteratorShortBuffer verifies that a buffer too short to hold the
@@ -91,30 +98,19 @@ func TestRawIteratorNoAllocs(t *testing.T) {
 	iter, err := NewRawIterator(raw)
 	require.NoError(t, err)
 	got := 0
-	for {
-		opt, err := iter.Next()
-		require.NoError(t, err)
-		if opt.IsNone() {
-			break
-		}
+	for el := iter.Next(); el != nil; el = iter.Next() {
 		got++
 	}
+	require.NoError(t, iter.Err())
 	require.Equal(t, want, got, "iterator should visit every field")
 
 	avg := testing.AllocsPerRun(100, func() {
 		iter, err := NewRawIterator(raw)
 		require.NoError(t, err)
 
-		for {
-			opt, err := iter.Next()
-			require.NoError(t, err)
-			if opt.IsNone() {
-				return
-			}
-			// Force the element out of the Option so the body of Next is
-			// not dead-code-eliminated. MustGet is itself alloc-free per
-			// the option package's tests.
-			_ = opt.MustGet()
+		for el := iter.Next(); el != nil; el = iter.Next() {
+			// Reference el so the loop body isn't dead-code-eliminated.
+			_ = el
 		}
 	})
 

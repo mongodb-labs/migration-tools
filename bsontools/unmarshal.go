@@ -24,24 +24,13 @@ func UnmarshalToD[D ~[]byte](raw D) (bson.D, error) {
 
 	d := make(bson.D, 0, elsCount)
 
-	for {
-		elOpt, err := rIter.Next()
-		if err != nil {
-			panic("parsing BSON (no error earlier?!?): " + err.Error())
-		}
-
-		el, has := elOpt.Get()
-		if !has {
-			break
-		}
-
+	for el := rIter.Next(); el != nil; el = rIter.Next() {
 		key, err := el.KeyErr()
 		if err != nil {
 			return nil, fmt.Errorf("extracting field %d’s name: %w", len(d), err)
 		}
 
-		e := bson.E{}
-		e.Key = key
+		e := bson.E{Key: key}
 
 		val, err := el.ValueErr()
 		if err != nil {
@@ -54,6 +43,10 @@ func UnmarshalToD[D ~[]byte](raw D) (bson.D, error) {
 		}
 
 		d = append(d, e)
+	}
+
+	if err := rIter.Err(); err != nil {
+		panic("parsing BSON (no error earlier?!?): " + err.Error())
 	}
 
 	return d, nil
@@ -77,17 +70,7 @@ func UnmarshalArray(raw bson.RawArray) (bson.A, error) {
 		panic("parsing BSON (no error earlier?!?): " + err.Error())
 	}
 
-	for {
-		elOpt, err := rIter.Next()
-		if err != nil {
-			panic("parsing BSON (no error earlier?!?): " + err.Error())
-		}
-
-		el, has := elOpt.Get()
-		if !has {
-			break
-		}
-
+	for el := rIter.Next(); el != nil; el = rIter.Next() {
 		val, err := el.ValueErr()
 		if err != nil {
 			return nil, fmt.Errorf("extracting element %d: %w", len(a), err)
@@ -99,6 +82,10 @@ func UnmarshalArray(raw bson.RawArray) (bson.A, error) {
 		}
 
 		a = append(a, anyVal)
+	}
+
+	if err := rIter.Err(); err != nil {
+		panic("parsing BSON (no error earlier?!?): " + err.Error())
 	}
 
 	return a, nil
