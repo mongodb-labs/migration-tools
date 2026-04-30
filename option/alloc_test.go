@@ -13,8 +13,11 @@ const allocFreeRuns = 100
 // largeStruct is intentionally larger than a machine word so that boxing it
 // into an interface{} (e.g. via `args ...any`) forces a heap allocation.
 type largeStruct struct {
+	//nolint:unused
 	a, b, c, d int64
-	s          string
+
+	//nolint:unused
+	s string
 }
 
 func assertNoAllocs(t *testing.T, name string, fn func()) {
