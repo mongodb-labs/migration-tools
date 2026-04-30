@@ -56,7 +56,8 @@ func TestCountRawElementsNoAllocs(t *testing.T) {
 	require.Equal(t, len(doc), count)
 
 	avg := testing.AllocsPerRun(100, func() {
-		_, _ = CountRawElements(raw)
+		_, err = CountRawElements(raw)
+		require.NoError(t, err)
 	})
 
 	assert.Zero(t, avg, "CountRawElements should not heap-allocate")

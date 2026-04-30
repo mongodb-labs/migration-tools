@@ -102,9 +102,12 @@ func TestRawIteratorNoAllocs(t *testing.T) {
 	require.Equal(t, want, got, "iterator should visit every field")
 
 	avg := testing.AllocsPerRun(100, func() {
-		iter, _ := NewRawIterator(raw)
+		iter, err := NewRawIterator(raw)
+		require.NoError(t, err)
+
 		for {
-			opt, _ := iter.Next()
+			opt, err := iter.Next()
+			require.NoError(t, err)
 			if opt.IsNone() {
 				return
 			}

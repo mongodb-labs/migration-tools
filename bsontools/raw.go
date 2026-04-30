@@ -28,7 +28,7 @@ func RawLookup[T unmarshalTargets, D ~[]byte](in D, pointer ...string) (T, error
 
 // CountRawElements returns a count of the fields in the given BSON document.
 func CountRawElements[D ~[]byte](doc D) (int, error) {
-	iter, err := NewRawIterator(doc)
+	rawIter, err := NewRawIterator(doc)
 	if err != nil {
 		return 0, err
 	}
@@ -36,7 +36,7 @@ func CountRawElements[D ~[]byte](doc D) (int, error) {
 	count := 0
 
 	for {
-		el, err := iter.Next()
+		el, err := rawIter.Next()
 		if err != nil {
 			return 0, err
 		}
