@@ -73,6 +73,112 @@ func TestNewRawIteratorLengthMismatch(t *testing.T) {
 	})
 }
 
+// TestNewRawIteratorBelowMinimumLength verifies that a non-empty buffer with
+// a declared length below the BSON minimum (5 bytes) is rejected, even when
+// the declared length matches the actual buffer length.
+func TestNewRawIteratorBelowMinimumLength(t *testing.T) {
+	// 4-byte buffer whose length header self-consistently claims 4 bytes:
+	// header is correct length, length matches buffer, but no room for
+	// terminator. Without the explicit minimum-length check this would
+	// silently appear to be an "empty" document.
+	doc := []byte{0x04, 0x00, 0x00, 0x00}
+
+	_, err := NewRawIterator(doc)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "below BSON minimum")
+}
+
+// TestNewRawIteratorMissingTerminator verifies that a BSON document without
+// the required 0x00 trailing terminator byte is rejected. Without this check
+// the iterator would treat a malformed doc as a clean end-of-document.
+func TestNewRawIteratorMissingTerminator(t *testing.T) {
+	// 5-byte buffer claiming to be 5 bytes long, but final byte is 0xFF
+	// (should be 0x00).
+	doc := []byte{0x05, 0x00, 0x00, 0x00, 0xFF}
+
+	_, err := NewRawIterator(doc)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "trailing NUL terminator")
+	assert.ErrorContains(t, err, "0xff")
+}
+
+// TestRawIteratorMalformedElement verifies that a doc whose outer structure
+// is valid (header, length, terminator) but whose element body is malformed
+// surfaces the error via Err, latches the error so Next stays nil, and does
+// not advance Index past the failed field.
+func TestRawIteratorMalformedElement(t *testing.T) {
+	// {"a": "ok", "b": "oops"} — corrupt the second value's string-length
+	// prefix to claim a wildly large size, while keeping the outer document
+	// length and terminator intact so NewRawIterator accepts the buffer.
+	doc := bson.D{{"a", "ok"}, {"b", "oops"}}
+	raw, err := bson.Marshal(doc)
+	require.NoError(t, err)
+
+	tampered := append([]byte{}, raw...)
+	// Locate the 4-byte string-length prefix of value "oops". The simplest
+	// way is to scan for the unique substring "oops" and step back 4 bytes.
+	idx := -1
+	for i := 0; i+4 < len(tampered); i++ {
+		if string(tampered[i:i+4]) == "oops" {
+			idx = i - 4
+			break
+		}
+	}
+	require.GreaterOrEqual(t, idx, 0, "should locate string body in marshaled doc")
+	// Claim the string is much longer than the buffer's remaining bytes.
+	// Use a small-but-larger-than-remaining value so bsoncore's ReadElement
+	// returns !ok cleanly (as opposed to panicking on extreme values).
+	binary.LittleEndian.PutUint32(tampered[idx:idx+4], 100)
+
+	iter, err := NewRawIterator(tampered)
+	require.NoError(t, err, "outer doc should still pass NewRawIterator validation")
+
+	// First field parses fine.
+	first := iter.Next()
+	require.NotNil(t, first)
+	assert.Equal(t, "a", first.Key())
+	assert.Equal(t, 1, iter.Index(), "Index should advance after successful parse")
+
+	// Second field is malformed.
+	second := iter.Next()
+	assert.Nil(t, second, "malformed element should not be returned")
+	require.Error(t, iter.Err())
+	assert.Equal(t, 1, iter.Index(), "Index should not advance past failed field")
+
+	// Latched-error semantics: subsequent calls keep returning nil with the
+	// same error.
+	firstErr := iter.Err()
+	assert.Nil(t, iter.Next())
+	assert.Equal(t, firstErr, iter.Err())
+	assert.Nil(t, iter.Next())
+	assert.Equal(t, firstErr, iter.Err())
+}
+
+// TestRawIteratorIndex verifies that Index reports the 0-based index of the
+// next field to be returned by Next.
+func TestRawIteratorIndex(t *testing.T) {
+	doc := bson.D{{"a", 1}, {"b", 2}, {"c", 3}}
+	raw, err := bson.Marshal(doc)
+	require.NoError(t, err)
+
+	iter, err := NewRawIterator(raw)
+	require.NoError(t, err)
+	assert.Equal(t, 0, iter.Index(), "Index should be 0 before iteration")
+
+	require.NotNil(t, iter.Next())
+	assert.Equal(t, 1, iter.Index())
+
+	require.NotNil(t, iter.Next())
+	assert.Equal(t, 2, iter.Index())
+
+	require.NotNil(t, iter.Next())
+	assert.Equal(t, 3, iter.Index())
+
+	assert.Nil(t, iter.Next(), "no more fields")
+	assert.Equal(t, 3, iter.Index(), "Index does not advance past end-of-document")
+	assert.NoError(t, iter.Err())
+}
+
 // TestRawIteratorNoAllocs verifies that the happy-path iteration of a
 // RawIterator over a multi-field document does not heap-allocate. The
 // document holds a representative mix of types (string, int32, int64, bool,

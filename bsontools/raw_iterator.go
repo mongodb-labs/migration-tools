@@ -31,9 +31,11 @@ type RawIterator struct {
 // An empty buffer is treated as a valid empty BSON document (equivalent to
 // the 5-byte all-NUL form): no error, no elements yielded.
 //
-// If the document is non-empty but too short to contain a BSON length header,
-// or if the declared document length mismatches the buffer length, an error
-// is returned.
+// Otherwise the document is rejected with an error if:
+//   - It is too short to contain a BSON length header (4 bytes).
+//   - The declared length is below the BSON minimum (5 bytes).
+//   - The declared length does not match the actual buffer length.
+//   - The final byte is not the required 0x00 document terminator.
 func NewRawIterator[D ~[]byte](doc D) (RawIterator, error) {
 	if len(doc) == 0 {
 		return RawIterator{}, nil
@@ -49,11 +51,25 @@ func NewRawIterator[D ~[]byte](doc D) (RawIterator, error) {
 		)
 	}
 
+	if length < 5 {
+		return RawIterator{}, fmt.Errorf(
+			"declared document length (%d) is below BSON minimum (5)",
+			length,
+		)
+	}
+
 	if int(length) != len(doc) {
 		return RawIterator{}, fmt.Errorf(
 			"declared document length (%d) mismatches actual buffer length (%d)",
 			length,
 			len(doc),
+		)
+	}
+
+	if doc[len(doc)-1] != 0 {
+		return RawIterator{}, fmt.Errorf(
+			"BSON document missing trailing NUL terminator (last byte is 0x%02x)",
+			doc[len(doc)-1],
 		)
 	}
 
@@ -63,8 +79,11 @@ func NewRawIterator[D ~[]byte](doc D) (RawIterator, error) {
 	}, nil
 }
 
-// ParsedFields returns the # of fields returned by the iterator so far.
-func (ri *RawIterator) ParsedFields() int {
+// Index returns the 0-based index of the next field to be returned by Next.
+// Before iteration begins, returns 0. After N fields have been parsed
+// successfully, returns N. If Next encountered an error, this is the index
+// of the field that failed to parse.
+func (ri *RawIterator) Index() int {
 	return ri.fieldIndex
 }
 
