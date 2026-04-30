@@ -33,6 +33,35 @@ func TestRawLookup(t *testing.T) {
 	assert.ErrorContains(t, err, "string")
 }
 
+// TestCountRawElementsNoAllocs verifies that CountRawElements does not
+// heap-allocate when iterating a multi-field document. Regression here would
+// indicate that one of the iterator's internal allocations leaked back in.
+func TestCountRawElementsNoAllocs(t *testing.T) {
+	doc := bson.D{
+		{"s", "hello"},
+		{"i32", int32(42)},
+		{"i64", int64(1 << 40)},
+		{"b", true},
+		{"f", 3.14},
+		{"sub", bson.D{{"x", "y"}}},
+		{"arr", bson.A{1, 2, 3}},
+	}
+	raw, err := bson.Marshal(doc)
+	require.NoError(t, err)
+
+	// Sanity-check that we're actually counting all fields, so the no-alloc
+	// loop below is exercising the real happy path.
+	count, err := CountRawElements(raw)
+	require.NoError(t, err)
+	require.Equal(t, len(doc), count)
+
+	avg := testing.AllocsPerRun(100, func() {
+		_, _ = CountRawElements(raw)
+	})
+
+	assert.Zero(t, avg, "CountRawElements should not heap-allocate")
+}
+
 func TestRawElements_Empty(t *testing.T) {
 	var doc bson.Raw
 

@@ -14,13 +14,11 @@ func RawLookup[T unmarshalTargets, D ~[]byte](in D, pointer ...string) (T, error
 	doc := bson.Raw(in)
 
 	rv, err := doc.LookupErr(pointer...)
-
 	if err != nil {
 		return *new(T), fmt.Errorf("extracting %#q: %w", pointer, err)
 	}
 
 	val, err := RawValueTo[T](rv)
-
 	if err != nil {
 		return *new(T), fmt.Errorf("casting %#q: %w", pointer, err)
 	}
@@ -30,23 +28,36 @@ func RawLookup[T unmarshalTargets, D ~[]byte](in D, pointer ...string) (T, error
 
 // CountRawElements returns a count of the fields in the given BSON document.
 func CountRawElements[D ~[]byte](doc D) (int, error) {
-	elsCount := 0
+	iter, err := NewRawIterator(doc)
+	if err != nil {
+		return 0, err
+	}
 
-	for _, err := range RawElements(doc) {
+	count := 0
+
+	for {
+		el, err := iter.Next()
 		if err != nil {
 			return 0, err
 		}
 
-		elsCount++
+		if el.IsNone() {
+			break
+		}
+
+		count++
 	}
 
-	return elsCount, nil
+	return count, nil
 }
 
 // RawElements returns an iterator over a Raw’s elements.
 //
 // If the iterator returns an error but the caller continues iterating,
 // a panic will ensue.
+//
+// NB: Consider RawIterator instead in hot code paths, since it avoids
+// heap-allocating closures.
 func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
 	if len(doc) == 0 {
 		return func(func(bson.RawElement, error) bool) {}
@@ -91,6 +102,5 @@ func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
 				return
 			}
 		}
-
 	}
 }
