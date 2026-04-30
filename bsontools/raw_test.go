@@ -63,6 +63,19 @@ func TestCountRawElementsNoAllocs(t *testing.T) {
 	assert.Zero(t, avg, "CountRawElements should not heap-allocate")
 }
 
+// TestCountRawElementsEmptyBuffer verifies that CountRawElements treats an
+// empty buffer as zero fields (with no error), even though NewRawIterator now
+// rejects empty input. CountRawElements short-circuits this case.
+func TestCountRawElementsEmptyBuffer(t *testing.T) {
+	count, err := CountRawElements(bson.Raw{})
+	require.NoError(t, err)
+	assert.Zero(t, count)
+
+	count, err = CountRawElements(bson.Raw(nil))
+	require.NoError(t, err)
+	assert.Zero(t, count)
+}
+
 func TestRawElements_Empty(t *testing.T) {
 	var doc bson.Raw
 

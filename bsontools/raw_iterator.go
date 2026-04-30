@@ -10,6 +10,7 @@ import (
 
 // RawIterator is an iterator over a bson.Raw’s elements.
 type RawIterator struct {
+	orig       []byte
 	remaining  []byte
 	fieldIndex int
 }
@@ -46,7 +47,10 @@ func NewRawIterator[D ~[]byte](doc D) (RawIterator, error) {
 		)
 	}
 
-	return RawIterator{remaining: doc[4:]}, nil
+	return RawIterator{
+		orig:      doc,
+		remaining: doc[4:],
+	}, nil
 }
 
 // FieldIndex returns the next-parsed field’s 0-based index.
@@ -63,7 +67,7 @@ func (ri *RawIterator) Next() (option.Option[bson.RawElement], error) {
 	el, rem, ok := bsoncore.ReadElement(ri.remaining)
 
 	if !ok {
-		return option.None[bson.RawElement](), bsoncore.NewInsufficientBytesError(ri.remaining, rem)
+		return option.None[bson.RawElement](), bsoncore.NewInsufficientBytesError(ri.orig, rem)
 	}
 
 	if err := el.Validate(); err != nil {

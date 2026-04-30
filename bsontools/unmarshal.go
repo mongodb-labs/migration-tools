@@ -8,21 +8,31 @@ import (
 
 // UnmarshalToD mimics bson.Unmarshal to a bson.D.
 func UnmarshalToD[D ~[]byte](raw D) (bson.D, error) {
-	elsCount := 0
+	elsCount, err := CountRawElements(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing BSON: %w", err)
+	}
 
-	for _, err := range RawElements(raw) {
-		if err != nil {
-			return nil, fmt.Errorf("parsing BSON: %w", err)
-		}
+	if elsCount == 0 {
+		return bson.D{}, nil
+	}
 
-		elsCount++
+	rIter, err := NewRawIterator(raw)
+	if err != nil {
+		panic("parsing BSON (no error earlier?!?): " + err.Error())
 	}
 
 	d := make(bson.D, 0, elsCount)
 
-	for el, err := range RawElements(raw) {
+	for {
+		elOpt, err := rIter.Next()
 		if err != nil {
 			panic("parsing BSON (no error earlier?!?): " + err.Error())
+		}
+
+		el, has := elOpt.Get()
+		if !has {
+			break
 		}
 
 		key, err := el.KeyErr()
@@ -51,21 +61,31 @@ func UnmarshalToD[D ~[]byte](raw D) (bson.D, error) {
 
 // UnmarshalArray is like UnmarshalRaw but for an array.
 func UnmarshalArray(raw bson.RawArray) (bson.A, error) {
-	elsCount := 0
+	elsCount, err := CountRawElements(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing BSON: %w", err)
+	}
 
-	for _, err := range RawElements(bson.Raw(raw)) {
-		if err != nil {
-			return nil, fmt.Errorf("parsing BSON: %w", err)
-		}
-
-		elsCount++
+	if elsCount == 0 {
+		return bson.A{}, nil
 	}
 
 	a := make(bson.A, 0, elsCount)
 
-	for el, err := range RawElements(bson.Raw(raw)) {
+	rIter, err := NewRawIterator(raw)
+	if err != nil {
+		panic("parsing BSON (no error earlier?!?): " + err.Error())
+	}
+
+	for {
+		elOpt, err := rIter.Next()
 		if err != nil {
 			panic("parsing BSON (no error earlier?!?): " + err.Error())
+		}
+
+		el, has := elOpt.Get()
+		if !has {
+			break
 		}
 
 		val, err := el.ValueErr()
