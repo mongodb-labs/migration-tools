@@ -41,11 +41,13 @@ type Option[T any] struct {
 
 // Some creates an Option with a value.
 func Some[T any](value T) Option[T] {
-	lo.Assertf(
-		!isNil(value),
-		"Option[%T] forbids nil value",
-		value,
-	)
+	if isNil(value) {
+		lo.Assertf(
+			false,
+			"Option[%T] forbids nil value",
+			value,
+		)
+	}
 
 	return Option[T]{true, value}
 }
@@ -80,13 +82,12 @@ func FromPointer[T any](valPtr *T) Option[T] {
 // This is useful, e.g., to interface with code that uses
 // nil to indicate a missing slice or map.
 func IfNotZero[T any](value T) Option[T] {
-
 	// copied from samber/mo.EmptyableToOption:
 	if reflect.ValueOf(&value).Elem().IsZero() {
-		return Option[T]{}
+		return None[T]()
 	}
 
-	return Option[T]{true, value}
+	return Some(value)
 }
 
 // Get “unboxes” the Option’s internal value.
@@ -101,13 +102,20 @@ func (o Option[T]) Get() (T, bool) {
 
 // MustGet is like Get but panics if the Option is empty.
 func (o Option[T]) MustGet() T {
-	return o.MustGetf("%T must be nonempty!", o)
+	val, exists := o.Get()
+	if !exists {
+		lo.Assertf(false, "%T must be nonempty!", o)
+	}
+
+	return val
 }
 
 // MustGetf is like MustGet, but this lets you customize the panic.
 func (o Option[T]) MustGetf(pattern string, args ...any) T {
 	val, exists := o.Get()
-	lo.Assertf(exists, pattern, args...)
+	if !exists {
+		lo.Assertf(exists, pattern, args...)
+	}
 
 	return val
 }
