@@ -154,6 +154,42 @@ func TestRawIteratorMalformedElement(t *testing.T) {
 	assert.Equal(t, firstErr, iter.Err())
 }
 
+// TestRawIteratorElementConsumesTerminator verifies that an element whose
+// declared length would extend into (and consume) the document's trailing
+// 0x00 terminator surfaces as an error rather than being silently accepted.
+//
+// This regresses a bug where the iterator stored doc[4:] as remaining bytes
+// (including the terminator) and exited cleanly when remaining was small,
+// allowing malformed elements that swallowed the terminator to slip through.
+func TestRawIteratorElementConsumesTerminator(t *testing.T) {
+	// {"a": "ab"} marshals to 15 bytes:
+	// [len=15][type=02][key=a\0][strlen=3][a b \0][doc-term=0]
+	// Bump the inner string-length to 4 so the element claims one more
+	// byte of value than is available before the terminator. The element
+	// would then consume the doc terminator, leaving no terminator behind.
+	doc, err := bson.Marshal(bson.D{{"a", "ab"}})
+	require.NoError(t, err)
+
+	// Locate the 4-byte string-length prefix immediately preceding "ab".
+	idx := -1
+	for i := 0; i+2 < len(doc); i++ {
+		if string(doc[i:i+2]) == "ab" {
+			idx = i - 4
+			break
+		}
+	}
+	require.GreaterOrEqual(t, idx, 0)
+	binary.LittleEndian.PutUint32(doc[idx:idx+4], 4)
+
+	iter, err := NewRawIterator(doc)
+	require.NoError(t, err, "outer doc should still pass NewRawIterator")
+
+	// Iterate to exhaustion. The malformed element must surface as an error.
+	for iter.Next() != nil {
+	}
+	require.Error(t, iter.Err(), "malformed last element must not be silently accepted")
+}
+
 // TestRawIteratorIndex verifies that Index reports the 0-based index of the
 // next field to be returned by Next.
 func TestRawIteratorIndex(t *testing.T) {

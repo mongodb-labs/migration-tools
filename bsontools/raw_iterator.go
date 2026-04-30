@@ -73,9 +73,11 @@ func NewRawIterator[D ~[]byte](doc D) (RawIterator, error) {
 		)
 	}
 
+	// Exclude the trailing 0x00 doc terminator from `remaining` so a
+	// malformed last element cannot silently consume it.
 	return RawIterator{
 		orig:      doc,
-		remaining: doc[4:],
+		remaining: doc[4 : len(doc)-1],
 	}, nil
 }
 
@@ -91,7 +93,7 @@ func (ri *RawIterator) Index() int {
 // or after an error. Use Err to distinguish those two cases. Once an error
 // is set or the document is exhausted, subsequent calls keep returning nil.
 func (ri *RawIterator) Next() bson.RawElement {
-	if ri.err != nil || len(ri.remaining) <= 1 {
+	if ri.err != nil || len(ri.remaining) == 0 {
 		return nil
 	}
 
