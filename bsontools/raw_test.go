@@ -64,8 +64,8 @@ func TestCountRawElementsNoAllocs(t *testing.T) {
 }
 
 // TestCountRawElementsEmptyBuffer verifies that CountRawElements treats an
-// empty buffer as zero fields (with no error), even though NewRawIterator now
-// rejects empty input. CountRawElements short-circuits this case.
+// empty buffer as zero fields (with no error). Empty raw input is handled as
+// an empty document, and CountRawElements returns zero for this case.
 func TestCountRawElementsEmptyBuffer(t *testing.T) {
 	count, err := CountRawElements(bson.Raw{})
 	require.NoError(t, err)
