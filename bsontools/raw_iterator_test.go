@@ -117,13 +117,7 @@ func TestRawIteratorMalformedElement(t *testing.T) {
 	tampered := append([]byte{}, raw...)
 	// Locate the 4-byte string-length prefix of value "oops". The simplest
 	// way is to scan for the unique substring "oops" and step back 4 bytes.
-	idx := -1
-	for i := 0; i+4 < len(tampered); i++ {
-		if string(tampered[i:i+4]) == "oops" {
-			idx = i - 4
-			break
-		}
-	}
+	idx := bytes.Index(tampered, []byte("oops")) - 4
 	require.GreaterOrEqual(t, idx, 0, "should locate string body in marshaled doc")
 	// Claim the string is much longer than the buffer's remaining bytes.
 	// Use a small-but-larger-than-remaining value so bsoncore's ReadElement
