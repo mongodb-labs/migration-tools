@@ -1,6 +1,7 @@
 package bsontools
 
 import (
+	"bytes"
 	"encoding/binary"
 	"testing"
 
