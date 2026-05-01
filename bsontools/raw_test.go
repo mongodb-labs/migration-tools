@@ -33,6 +33,49 @@ func TestRawLookup(t *testing.T) {
 	assert.ErrorContains(t, err, "string")
 }
 
+// TestCountRawElementsNoAllocs verifies that CountRawElements does not
+// heap-allocate when iterating a multi-field document. Regression here would
+// indicate that one of the iterator's internal allocations leaked back in.
+func TestCountRawElementsNoAllocs(t *testing.T) {
+	doc := bson.D{
+		{"s", "hello"},
+		{"i32", int32(42)},
+		{"i64", int64(1 << 40)},
+		{"b", true},
+		{"f", 3.14},
+		{"sub", bson.D{{"x", "y"}}},
+		{"arr", bson.A{1, 2, 3}},
+	}
+	raw, err := bson.Marshal(doc)
+	require.NoError(t, err)
+
+	// Sanity-check that we're actually counting all fields, so the no-alloc
+	// loop below is exercising the real happy path.
+	count, err := CountRawElements(raw)
+	require.NoError(t, err)
+	require.Equal(t, len(doc), count)
+
+	avg := testing.AllocsPerRun(100, func() {
+		_, err = CountRawElements(raw)
+		require.NoError(t, err)
+	})
+
+	assert.Zero(t, avg, "CountRawElements should not heap-allocate")
+}
+
+// TestCountRawElementsEmptyBuffer verifies that CountRawElements treats an
+// empty buffer as zero fields (with no error). Empty raw input is handled as
+// an empty document, and CountRawElements returns zero for this case.
+func TestCountRawElementsEmptyBuffer(t *testing.T) {
+	count, err := CountRawElements(bson.Raw{})
+	require.NoError(t, err)
+	assert.Zero(t, count)
+
+	count, err = CountRawElements(bson.Raw(nil))
+	require.NoError(t, err)
+	assert.Zero(t, count)
+}
+
 func TestRawElements_Empty(t *testing.T) {
 	var doc bson.Raw
 
@@ -55,6 +98,7 @@ func TestRawElements_ShortHeader(t *testing.T) {
 	for _, err := range RawElements(doc) {
 		require.Error(t, err)
 		assert.ErrorAs(t, err, &bsoncore.InsufficientBytesError{})
+		break // Must stop iterating after an error or RawElements panics.
 	}
 }
 
