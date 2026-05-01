@@ -73,20 +73,15 @@ func (h *History[T]) Add(datum T) int {
 func (h *History[T]) getFirstValidIdxWhileLocked(now time.Time) int {
 	cutoff := now.Add(-h.ttl)
 
-	for i, logItem := range h.logs {
-		if logItem.At.Before(cutoff) {
-			continue
-		}
+	idx, _ := slices.BinarySearchFunc(h.logs, cutoff, func(l Log[T], c time.Time) int {
+		return l.At.Compare(c)
+	})
 
-		return i
-	}
-
-	// We only get here if all logs are stale.
-	return len(h.logs)
+	return idx
 }
 
 func (h *History[T]) reapWhileLocked(now time.Time) {
-	h.logs = h.logs[h.getFirstValidIdxWhileLocked(now):]
+	h.logs = slices.Delete(h.logs, 0, h.getFirstValidIdxWhileLocked(now))
 }
 
 type realNumber interface {

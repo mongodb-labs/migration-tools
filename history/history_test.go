@@ -1,6 +1,7 @@
 package history
 
 import (
+	"runtime"
 	"slices"
 	"testing"
 	"testing/synctest"
@@ -61,6 +62,51 @@ func splitLogs[T any](in []Log[T]) ([]time.Time, []T) {
 	}
 
 	return times, data
+}
+
+// TestAddAfterReapDoesNotAllocate verifies the steady-state invariant that
+// motivates the in-place reap implementation: once the underlying slice has
+// reached some capacity, an Add that follows a reap does not allocate. The
+// reap is in-place (slices.Delete) so capacity is preserved, and the
+// subsequent append fits in the existing capacity.
+func TestAddAfterReapDoesNotAllocate(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const ttl = time.Minute
+		h := New[int](ttl)
+
+		// Prime the slice so the underlying array reaches a stable capacity.
+		// Subsequent reap+append cycles then operate within that capacity.
+		for i := range 64 {
+			h.Add(i)
+		}
+
+		// Each iteration: advance past TTL so the previous iteration's entry
+		// expires, then Add. The Add reaps in-place (no alloc) and appends
+		// into existing capacity (no alloc).
+		// Manual memstats measurement, since synctest interferes with
+		// testing.AllocsPerRun's bookkeeping (it reports 0 even when there
+		// are real allocations).
+		//
+		// The reap-then-append cycle should allocate ~0 per iteration. A
+		// regression to a naive reslice (h.logs = h.logs[k:]) loses capacity
+		// each time and allocates on every append (~1 per iteration after
+		// growth amortization). We allow a small baseline for synctest
+		// internals; well under the per-iteration count.
+		var before, after runtime.MemStats
+		const iterations = 100
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		for range iterations {
+			time.Sleep(2 * ttl)
+			h.Add(0)
+		}
+		runtime.ReadMemStats(&after)
+		allocs := after.Mallocs - before.Mallocs
+
+		t.Logf("total mallocs over %d iterations = %d", iterations, allocs)
+		assert.Less(t, int(allocs), iterations/10,
+			"Add following reap should not allocate per iteration")
+	})
 }
 
 func TestRatePer(t *testing.T) {
