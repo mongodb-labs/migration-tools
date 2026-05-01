@@ -8,6 +8,9 @@ import (
 
 // UnmarshalToD mimics bson.Unmarshal to a bson.D.
 func UnmarshalToD[D ~[]byte](raw D) (bson.D, error) {
+	// First we count the document’s # of elements. Unfortunately this entails
+	// a full iteration of the document (before the “main” one below), but
+	// this way we avoid re-allocating the bson.D every time we add an element.
 	elsCount, err := CountRawElements(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing BSON: %w", err)
