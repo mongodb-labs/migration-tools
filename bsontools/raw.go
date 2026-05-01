@@ -14,13 +14,11 @@ func RawLookup[T unmarshalTargets, D ~[]byte](in D, pointer ...string) (T, error
 	doc := bson.Raw(in)
 
 	rv, err := doc.LookupErr(pointer...)
-
 	if err != nil {
 		return *new(T), fmt.Errorf("extracting %#q: %w", pointer, err)
 	}
 
 	val, err := RawValueTo[T](rv)
-
 	if err != nil {
 		return *new(T), fmt.Errorf("casting %#q: %w", pointer, err)
 	}
@@ -48,23 +46,28 @@ func CountRawElements[D ~[]byte](doc D) (int, error) {
 // If the iterator returns an error but the caller continues iterating,
 // a panic will ensue.
 func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
-	if len(doc) == 0 {
-		return func(func(bson.RawElement, error) bool) {}
-	}
+	return func(yield func(bson.RawElement, error) bool) {
+		if len(doc) == 0 {
+			return
+		}
 
-	if _, rem, ok := bsoncore.ReadLength(doc); !ok {
-		return func(yield func(bson.RawElement, error) bool) {
-			yield(nil, fmt.Errorf(
+		if _, rem, ok := bsoncore.ReadLength(doc); !ok {
+			err := fmt.Errorf(
 				"%w (buffer is only %d bytes long)",
 				bsoncore.NewInsufficientBytesError(doc, rem),
 				len(doc),
-			))
+			)
+			if err != nil {
+				if yield(nil, err) {
+					panic(fmt.Errorf("must stop iteration after error (%w)", err))
+				}
+
+				return
+			}
 		}
-	}
 
-	remaining := doc[4:]
+		remaining := doc[4:]
 
-	return func(yield func(bson.RawElement, error) bool) {
 		var el bsoncore.Element
 		var ok bool
 
@@ -81,7 +84,7 @@ func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
 
 			if err != nil {
 				if yield(nil, err) {
-					panic(fmt.Sprintf("Must stop iteration after error (%v)", err))
+					panic(fmt.Errorf("must stop iteration after error (%w)", err))
 				}
 
 				return
@@ -91,6 +94,5 @@ func RawElements[D ~[]byte](doc D) iter.Seq2[bson.RawElement, error] {
 				return
 			}
 		}
-
 	}
 }
