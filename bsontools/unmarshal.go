@@ -13,27 +13,23 @@ func UnmarshalToD[D ~[]byte](raw D) (bson.D, error) {
 	// this way we avoid re-allocating the bson.D every time we add an element.
 	elsCount, err := CountRawElements(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing BSON: %w", err)
-	}
-
-	if elsCount == 0 {
-		return bson.D{}, nil
-	}
-
-	rIter, err := NewRawIterator(raw)
-	if err != nil {
-		panic("parsing BSON (no error earlier?!?): " + err.Error())
+		return nil, fmt.Errorf("counting elements: %w", err)
 	}
 
 	d := make(bson.D, 0, elsCount)
 
-	for el := rIter.Next(); el != nil; el = rIter.Next() {
+	for el, err := range RawElements(raw) {
+		if err != nil {
+			panic("parsing BSON (no error earlier?!?): " + err.Error())
+		}
+
 		key, err := el.KeyErr()
 		if err != nil {
 			return nil, fmt.Errorf("extracting field %d’s name: %w", len(d), err)
 		}
 
-		e := bson.E{Key: key}
+		e := bson.E{}
+		e.Key = key
 
 		val, err := el.ValueErr()
 		if err != nil {
@@ -48,32 +44,23 @@ func UnmarshalToD[D ~[]byte](raw D) (bson.D, error) {
 		d = append(d, e)
 	}
 
-	if err := rIter.Err(); err != nil {
-		panic("parsing BSON (no error earlier?!?): " + err.Error())
-	}
-
 	return d, nil
 }
 
-// UnmarshalArray is like UnmarshalRaw but for an array.
+// UnmarshalArray is like UnmarshalToD but for an array.
 func UnmarshalArray(raw bson.RawArray) (bson.A, error) {
 	elsCount, err := CountRawElements(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing BSON: %w", err)
-	}
-
-	if elsCount == 0 {
-		return bson.A{}, nil
+		return nil, fmt.Errorf("counting array elements: %w", err)
 	}
 
 	a := make(bson.A, 0, elsCount)
 
-	rIter, err := NewRawIterator(raw)
-	if err != nil {
-		panic("parsing BSON (no error earlier?!?): " + err.Error())
-	}
+	for el, err := range RawElements(bson.Raw(raw)) {
+		if err != nil {
+			panic("parsing BSON (no error earlier?!?): " + err.Error())
+		}
 
-	for el := rIter.Next(); el != nil; el = rIter.Next() {
 		val, err := el.ValueErr()
 		if err != nil {
 			return nil, fmt.Errorf("extracting element %d: %w", len(a), err)
@@ -85,10 +72,6 @@ func UnmarshalArray(raw bson.RawArray) (bson.A, error) {
 		}
 
 		a = append(a, anyVal)
-	}
-
-	if err := rIter.Err(); err != nil {
-		panic("parsing BSON (no error earlier?!?): " + err.Error())
 	}
 
 	return a, nil
