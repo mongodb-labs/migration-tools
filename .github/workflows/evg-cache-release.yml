@@ -1,0 +1,58 @@
+name: Release evg-cache
+
+on:
+  push:
+    branches:
+      - main
+      - evg-cache-tool
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+          - runner: macos-14
+            goos: darwin
+            goarch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      - name: Install tools with `mise`
+        uses: jdx/mise-action@v3
+        with:
+          version: 2026.2.19
+      - name: Build evg-cache
+        run: go build -ldflags "-X main.version=${GITHUB_SHA::8}" -o evg-cache ./cmd/evg-cache/
+      - name: Package tarball
+        run: tar -czf evg-cache-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz evg-cache
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: evg-cache-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: evg-cache-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "evg-cache-${{ github.sha }}" \
+            --title "evg-cache Build for ${{ github.sha }}" \
+            --notes "evg-cache Build for ${{ github.sha }}" \
+            evg-cache-linux-amd64.tar.gz \
+            evg-cache-darwin-arm64.tar.gz
