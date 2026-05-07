@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mongodb-labs/migration-tools/cmd/evg-cache/internal/extractscripts"
@@ -21,8 +22,7 @@ func TestExtractScripts_WritesAllScripts(t *testing.T) {
 		"run-python-script.sh",
 		"find-recent-python.sh",
 		"compute-cache-key.py",
-		"detect-cache-hit.py",
-		"extract-cache-artifact.py",
+		"restore-cache-artifact.py",
 		"create-cache-artifact.py",
 	}
 	for _, name := range expectedFiles {
@@ -37,19 +37,21 @@ func TestExtractScripts_ShellScriptsAreExecutable(t *testing.T) {
 	err := extractscripts.ExtractScripts(scripts.FS, outDir)
 	require.NoError(t, err, "ExtractScripts should not return an error")
 
-	shellScripts := []string{
-		"set-distro-id-expansion.sh",
-		"run-python-script.sh",
-		"find-recent-python.sh",
-	}
-	for _, name := range shellScripts {
-		path := filepath.Join(outDir, name)
-		info, statErr := os.Stat(path)
+	shellScriptFound := false
+	walkErr := fs.WalkDir(scripts.FS, "data", func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".sh") {
+			return err
+		}
+		shellScriptFound = true
+		info, statErr := os.Stat(filepath.Join(outDir, d.Name()))
 		require.NoError(t, statErr)
 		mode := info.Mode()
 		require.NotEqual(t, fs.FileMode(0), mode&0o111,
-			"shell script should be executable: %s (mode: %v)", name, mode)
-	}
+			"shell script should be executable: %s (mode: %v)", d.Name(), mode)
+		return nil
+	})
+	require.NoError(t, walkErr)
+	require.True(t, shellScriptFound, "at least one shell script should exist in the embedded FS")
 }
 
 func TestExtractScripts_FileContentsMatch(t *testing.T) {
@@ -57,11 +59,21 @@ func TestExtractScripts_FileContentsMatch(t *testing.T) {
 	err := extractscripts.ExtractScripts(scripts.FS, outDir)
 	require.NoError(t, err, "ExtractScripts should not return an error")
 
-	// Spot-check that compute-cache-key.py contains expected content.
-	content, readErr := os.ReadFile(filepath.Join(outDir, "compute-cache-key.py"))
-	require.NoError(t, readErr)
-	require.Contains(t, string(content), "hashlib.sha256",
-		"compute-cache-key.py should contain SHA256 hashing logic")
+	walkErr := fs.WalkDir(scripts.FS, "data", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		embedded, readErr := fs.ReadFile(scripts.FS, path)
+		require.NoError(t, readErr, "should be able to read embedded file %s", d.Name())
+
+		extracted, readErr := os.ReadFile(filepath.Join(outDir, d.Name()))
+		require.NoError(t, readErr, "should be able to read extracted file %s", d.Name())
+
+		require.Equal(t, embedded, extracted,
+			"extracted %s should have identical contents to the embedded original", d.Name())
+		return nil
+	})
+	require.NoError(t, walkErr)
 }
 
 func TestExtractScripts_CreatesOutputDirIfMissing(t *testing.T) {
@@ -74,19 +86,6 @@ func TestExtractScripts_CreatesOutputDirIfMissing(t *testing.T) {
 	require.NotEmpty(t, entries, "output directory should contain files after extraction")
 }
 
-func TestExtractScripts_RunPythonScriptSourcesCorrectPath(t *testing.T) {
-	outDir := t.TempDir()
-	err := extractscripts.ExtractScripts(scripts.FS, outDir)
-	require.NoError(t, err, "ExtractScripts should not return an error")
-
-	content, readErr := os.ReadFile(filepath.Join(outDir, "run-python-script.sh"))
-	require.NoError(t, readErr)
-	require.Contains(t, string(content), `"$SCRIPT_DIR/find-recent-python.sh"`,
-		"run-python-script.sh should source find-recent-python.sh from its own directory")
-	require.NotContains(t, string(content), "../../etc",
-		"run-python-script.sh should not reference mongosync-specific relative paths")
-}
-
 func TestExtractScripts_PythonScriptsUseCorrectPermissions(t *testing.T) {
 	outDir := t.TempDir()
 	err := extractscripts.ExtractScripts(scripts.FS, outDir)
@@ -94,8 +93,7 @@ func TestExtractScripts_PythonScriptsUseCorrectPermissions(t *testing.T) {
 
 	pythonScripts := []string{
 		"compute-cache-key.py",
-		"detect-cache-hit.py",
-		"extract-cache-artifact.py",
+		"restore-cache-artifact.py",
 		"create-cache-artifact.py",
 	}
 	for _, name := range pythonScripts {

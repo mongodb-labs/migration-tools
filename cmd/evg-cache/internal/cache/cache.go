@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/evergreen-ci/shrub"
-	"github.com/mongodb-labs/migration-tools/cmd/evg-cache/internal/s3"
-	"github.com/mongodb-labs/migration-tools/cmd/evg-cache/internal/subprocessexec"
+	"github.com/mongodb-labs/migration-tools/evergreen/s3"
+	"github.com/mongodb-labs/migration-tools/evergreen/subprocessexec"
 )
 
 var validName = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
@@ -38,12 +38,12 @@ type Builder struct {
 }
 
 // NewBuilder starts a new Builder for the named cache.
-// Panics if name does not match [a-zA-Z0-9-]+.
-func NewBuilder(name string) *Builder {
+// Returns an error if name does not match [a-zA-Z0-9-]+.
+func NewBuilder(name string) (*Builder, error) {
 	if !validName.MatchString(name) {
-		panic(fmt.Sprintf("cache.Builder: Name %#q must match [a-zA-Z0-9-]+", name))
+		return nil, fmt.Errorf("cache.Builder: Name %#q must match [a-zA-Z0-9-]+", name)
 	}
-	return &Builder{config: Config{Name: name, ScriptPrefix: "./evg-cache-scripts"}}
+	return &Builder{config: Config{Name: name, ScriptPrefix: "./evg-cache-scripts"}}, nil
 }
 
 func (b *Builder) WithBucket(bucket string) *Builder {
@@ -134,7 +134,7 @@ func (c *Config) ComputeKeyCommands() []*shrub.CommandDefinition {
 }
 
 // RestoreCommands returns commands to download and extract the cached artifact.
-// A cache miss sets the cache-hit expansion to "false" without failing the task.
+// A cache miss sets the cache-hit expansion to "" without failing the task.
 func (c *Config) RestoreCommands() []*shrub.CommandDefinition {
 	expansionName := c.CacheHitExpansion
 	expansionFile := filepath.Join("${workdir}", expansionName+".yml")
@@ -148,7 +148,7 @@ func (c *Config) RestoreCommands() []*shrub.CommandDefinition {
 
 		subprocessexec.NewCmdBuilder(c.scriptPath("run-python-script.sh")).
 			WithArgs(
-				c.scriptPath("detect-cache-hit.py"),
+				c.scriptPath("restore-cache-artifact.py"),
 				"--artifact", c.Artifact,
 				"--output", expansionFile,
 				"--expansion-name", expansionName,
@@ -159,11 +159,6 @@ func (c *Config) RestoreCommands() []*shrub.CommandDefinition {
 		shrub.CmdExpansionsUpdate{
 			File: expansionFile,
 		}.Resolve(),
-
-		subprocessexec.NewCmdBuilder(c.scriptPath("run-python-script.sh")).
-			WithArgs(c.scriptPath("extract-cache-artifact.py"), "--artifact", c.Artifact).
-			WithWorkingDirectory("${workdir}").
-			Build(),
 	}
 }
 

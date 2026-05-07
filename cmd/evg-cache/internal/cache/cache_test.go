@@ -19,7 +19,11 @@ func TestCacheTestSuite(t *testing.T) {
 }
 
 func testConfig() cache.Config {
-	return cache.NewBuilder("mise-and-go").
+	b, err := cache.NewBuilder("mise-and-go")
+	if err != nil {
+		panic(err) // "mise-and-go" is always a valid name
+	}
+	return b.
 		WithBucket("mciuploads").
 		WithNamespace("myproject/mise-cache").
 		WithKeyFiles([]string{"mise.toml", "mise-version.txt"}).
@@ -44,7 +48,9 @@ func (s *CacheTestSuite) TestS3Path_UsesNamespaceDirectly() {
 }
 
 func (s *CacheTestSuite) TestS3Path_ReflectsNamespaceAndArtifact() {
-	cfg := cache.NewBuilder("tools").
+	b, err := cache.NewBuilder("tools")
+	s.Require().NoError(err)
+	cfg := b.
 		WithBucket("mciuploads").
 		WithNamespace("other/cache").
 		WithKeyFiles([]string{"go.sum"}).
@@ -58,16 +64,17 @@ func (s *CacheTestSuite) TestS3Path_ReflectsNamespaceAndArtifact() {
 	)
 }
 
-func (s *CacheTestSuite) TestNewBuilder_PanicsOnInvalidName() {
-	s.Assert().Panics(func() {
-		cache.NewBuilder("invalid name!")
-	}, "NewBuilder should panic when name contains characters outside [a-zA-Z0-9-]")
+func (s *CacheTestSuite) TestNewBuilder_ReturnsErrorOnInvalidName() {
+	_, err := cache.NewBuilder("invalid name!")
+	s.Assert().
+		Error(err, "NewBuilder should return an error when name contains characters outside [a-zA-Z0-9-]")
 }
 
 func (s *CacheTestSuite) TestBuild_PanicsWhenBucketMissing() {
+	b, err := cache.NewBuilder("foo")
+	s.Require().NoError(err)
 	s.Assert().Panics(func() {
-		cache.NewBuilder("foo").
-			WithNamespace("ns").
+		b.WithNamespace("ns").
 			WithKeyFiles([]string{"f"}).
 			WithCachePaths([]string{"p"}).
 			Build()
@@ -75,9 +82,10 @@ func (s *CacheTestSuite) TestBuild_PanicsWhenBucketMissing() {
 }
 
 func (s *CacheTestSuite) TestBuild_PanicsMissingNamespace() {
+	b, err := cache.NewBuilder("foo")
+	s.Require().NoError(err)
 	s.Assert().Panics(func() {
-		cache.NewBuilder("foo").
-			WithBucket("b").
+		b.WithBucket("b").
 			WithKeyFiles([]string{"f"}).
 			WithCachePaths([]string{"p"}).
 			Build()
@@ -85,9 +93,10 @@ func (s *CacheTestSuite) TestBuild_PanicsMissingNamespace() {
 }
 
 func (s *CacheTestSuite) TestBuild_PanicsWhenKeyFilesMissing() {
+	b, err := cache.NewBuilder("foo")
+	s.Require().NoError(err)
 	s.Assert().Panics(func() {
-		cache.NewBuilder("foo").
-			WithBucket("b").
+		b.WithBucket("b").
 			WithNamespace("ns").
 			WithCachePaths([]string{"p"}).
 			Build()
@@ -95,9 +104,10 @@ func (s *CacheTestSuite) TestBuild_PanicsWhenKeyFilesMissing() {
 }
 
 func (s *CacheTestSuite) TestBuild_PanicsWhenCachePathsMissing() {
+	b, err := cache.NewBuilder("foo")
+	s.Require().NoError(err)
 	s.Assert().Panics(func() {
-		cache.NewBuilder("foo").
-			WithBucket("b").
+		b.WithBucket("b").
 			WithNamespace("ns").
 			WithKeyFiles([]string{"f"}).
 			Build()
@@ -105,9 +115,10 @@ func (s *CacheTestSuite) TestBuild_PanicsWhenCachePathsMissing() {
 }
 
 func (s *CacheTestSuite) TestBuild_PanicsWhenScriptPrefixEmpty() {
+	b, err := cache.NewBuilder("foo")
+	s.Require().NoError(err)
 	s.Assert().Panics(func() {
-		cache.NewBuilder("foo").
-			WithBucket("b").
+		b.WithBucket("b").
 			WithNamespace("ns").
 			WithKeyFiles([]string{"f"}).
 			WithCachePaths([]string{"p"}).
@@ -117,7 +128,9 @@ func (s *CacheTestSuite) TestBuild_PanicsWhenScriptPrefixEmpty() {
 }
 
 func (s *CacheTestSuite) TestCacheHitExpansion_DerivedFromName() {
-	cfg := cache.NewBuilder("mise-and-go").
+	b, err := cache.NewBuilder("mise-and-go")
+	s.Require().NoError(err)
+	cfg := b.
 		WithBucket("b").
 		WithNamespace("ns").
 		WithKeyFiles([]string{"f"}).
@@ -178,17 +191,15 @@ func (s *CacheTestSuite) TestRestoreCommands_CacheHitExpansion() {
 	s.Assert().Contains(
 		y,
 		cfg.CacheHitExpansion,
-		"detect-cache-hit.py should receive the configured expansion name",
+		"restore-cache-artifact.py should receive the configured expansion name",
 	)
 }
 
 func (s *CacheTestSuite) TestRestoreCommands_UsesScriptPrefix() {
 	cfg := testConfig()
 	y := s.mustMarshal(cfg.RestoreCommands())
-	s.Assert().Contains(y, "./evg-cache-scripts/detect-cache-hit.py",
-		"detect-cache-hit script path should use the configured script prefix")
-	s.Assert().Contains(y, "./evg-cache-scripts/extract-cache-artifact.py",
-		"extract-cache-artifact script path should use the configured script prefix")
+	s.Assert().Contains(y, "./evg-cache-scripts/restore-cache-artifact.py",
+		"restore-cache-artifact script path should use the configured script prefix")
 }
 
 func (s *CacheTestSuite) TestSaveCommands_CreatesTarballWithCachePaths() {
