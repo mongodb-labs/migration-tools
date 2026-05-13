@@ -2,6 +2,7 @@ package option
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -314,6 +315,22 @@ func assertIfNonZero[T any](t *testing.T, zeroVal, nonZeroVal T) {
 
 func pointerTo[T any](val T) *T {
 	return &val
+}
+
+func Test_Map(t *testing.T) {
+	t.Run("Some applies function", func(t *testing.T) {
+		result := Map(Some(3), func(n int) string {
+			return fmt.Sprintf("%d", n)
+		})
+		assert.Equal(t, Some("3"), result)
+	})
+
+	t.Run("None returns None", func(t *testing.T) {
+		result := Map(None[int](), func(n int) string {
+			return fmt.Sprintf("%d", n)
+		})
+		assert.Equal(t, None[string](), result)
+	})
 }
 
 func assertPanics[T any](t *testing.T, val T) {
