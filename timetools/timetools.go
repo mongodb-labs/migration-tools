@@ -54,7 +54,10 @@ func ToDuration[T realNumber](count T, unit time.Duration) (time.Duration, error
 	if result < float64(minDuration) {
 		return 0, fmt.Errorf("float underflow: %v * %s", count, unit)
 	}
-	if result > float64(maxDuration) {
+	// float64(maxDuration) rounds UP to 2^63 (MaxInt64 = 2^63-1 is not exactly
+	// representable), so >= is required: result == float64(maxDuration) is already
+	// an overflow, but > would miss it.
+	if result >= float64(maxDuration) {
 		return 0, fmt.Errorf("float overflow: %v * %s", count, unit)
 	}
 	return time.Duration(result), nil

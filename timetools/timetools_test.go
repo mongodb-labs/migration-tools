@@ -537,6 +537,16 @@ func TestToDurationFloatMultiplicationOverflow(t *testing.T) {
 			unit:        maxDuration,
 			expectError: true,
 		},
+		// Regression for the >= boundary: 1.5 * 6148914691236516864 has exact product
+		// 9223372036854775296, which is not representable as float64 at this scale and
+		// rounds UP to float64(maxDuration) = 2^63. The check must be >= not >, because
+		// result == float64(maxDuration) already overflows int64.
+		{
+			name:        "float-path overflow: float64 product rounds to float64(maxDuration)",
+			count:       1.5,
+			unit:        time.Duration(6148914691236516864),
+			expectError: true,
+		},
 
 		// Negative underflow: non-integer negative float that goes below MinInt64
 		// -9.5e18 * 1ns = -9.5e18 (below MinInt64 = -9.223e18)
