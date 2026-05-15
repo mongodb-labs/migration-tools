@@ -9,6 +9,31 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// TestUnmarshalToDEmptyBuffer verifies that UnmarshalToD treats an empty
+// buffer as an empty document (no error), inheriting CountRawElements's
+// short-circuit on empty input.
+func TestUnmarshalToDEmptyBuffer(t *testing.T) {
+	d, err := UnmarshalToD(bson.Raw{})
+	require.NoError(t, err)
+	assert.Equal(t, bson.D{}, d)
+
+	d, err = UnmarshalToD(bson.Raw(nil))
+	require.NoError(t, err)
+	assert.Equal(t, bson.D{}, d)
+}
+
+// TestUnmarshalArrayEmptyBuffer verifies that UnmarshalArray treats an empty
+// buffer as an empty array (no error).
+func TestUnmarshalArrayEmptyBuffer(t *testing.T) {
+	a, err := UnmarshalArray(bson.RawArray{})
+	require.NoError(t, err)
+	assert.Equal(t, bson.A{}, a)
+
+	a, err = UnmarshalArray(bson.RawArray(nil))
+	require.NoError(t, err)
+	assert.Equal(t, bson.A{}, a)
+}
+
 func TestIDIndexUnmarshal(t *testing.T) {
 	eJSON := `{"create": "mycapped2","capped": true,"size": {"$numberInt":"1024"},"idIndex": {"v": {"$numberInt":"2"},"key": {"_id": {"$numberInt":"1"}},"name": "_id_"}}`
 
