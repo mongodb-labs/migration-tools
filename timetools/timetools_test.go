@@ -412,18 +412,20 @@ func TestToDurationFloatBoundary(t *testing.T) {
 		count       float64
 		unit        time.Duration
 		expectError bool
+		expected    time.Duration
 	}{
 		{
 			name:        "float near MaxInt64: 9e18",
 			count:       9e18,
-			unit:        time.Duration(1),
-			expectError: false, // Float precision lets this convert naturally
+			unit:        time.Nanosecond,
+			expectError: false,
+			expected:    9e18 * time.Nanosecond,
 		},
 		{
 			name:        "float exceeding MaxInt64: 1e19",
 			count:       1e19,
-			unit:        time.Duration(1),
-			expectError: true, // Exceeds MaxInt64
+			unit:        time.Nanosecond,
+			expectError: true,
 		},
 		{
 			name:        "large integer float with unit multiplier: 1e15 * 1h",
@@ -434,37 +436,63 @@ func TestToDurationFloatBoundary(t *testing.T) {
 		{
 			name:        "negative float near MinInt64: -9e18",
 			count:       -9e18,
-			unit:        time.Duration(1),
+			unit:        time.Nanosecond,
 			expectError: false,
+			expected:    -9e18 * time.Nanosecond,
 		},
 		{
 			name:        "very small positive float: underflows to 0",
 			count:       1e-100,
 			unit:        time.Nanosecond,
-			expectError: false, // Underflows to 0, which is valid
+			expectError: false,
+			expected:    0,
 		},
 		{
 			name:        "very small negative float: underflows to 0",
 			count:       -1e-100,
 			unit:        time.Nanosecond,
-			expectError: true, // Exceeds minimum boundary
+			expectError: false,
+			expected:    0,
 		},
 		{
 			name:        "fractional float well within range",
 			count:       1.5e10,
 			unit:        time.Microsecond,
-			expectError: false, // Clearly within bounds
+			expectError: false,
+			expected:    15e9 * time.Microsecond,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ToDuration(tt.count, tt.unit)
+			result, err := ToDuration(tt.count, tt.unit)
 			if tt.expectError {
 				assert.Error(t, err, "should detect overflow/underflow")
 			} else {
-				assert.NoError(t, err, "should convert without error")
+				require.NoError(t, err, "should convert without error")
+				assert.Equal(t, tt.expected, result)
 			}
+		})
+	}
+}
+
+// TestToDurationTinyNegativeFloat exercises the workaround for
+// https://github.com/ccoVeille/go-safecast/pull/145, where safecast spuriously
+// rejects tiny negative floats that truncate to 0.
+func TestToDurationTinyNegativeFloat(t *testing.T) {
+	cases := []struct {
+		name  string
+		count float64
+	}{
+		{"negative 1e-100", -1e-100},
+		{"negative SmallestNonzeroFloat64", -math.SmallestNonzeroFloat64},
+		{"negative SmallestNonzeroFloat32 as float64", -float64(math.SmallestNonzeroFloat32)},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ToDuration(tt.count, time.Second)
+			require.NoError(t, err)
+			assert.Equal(t, time.Duration(0), result)
 		})
 	}
 }
