@@ -506,71 +506,56 @@ func TestToDurationFloatMultiplicationOverflow(t *testing.T) {
 		unit        time.Duration
 		expectError bool
 	}{
-		// Positive overflow: non-integer float that exceeds MaxInt64 when multiplied
-		// 9.5e18 * 1ns = 9.5e18 (way beyond MaxInt64 = 9.223e18)
 		{
 			name:        "fractional float positive overflow: 9.5e18 * 1ns",
 			count:       9.5e18,
 			unit:        time.Duration(1),
 			expectError: true,
 		},
-		// 5.2e9 * 1h: 5.2e9 * 3.6e12 = 1.872e22 (way beyond MaxInt64)
 		{
 			name:        "fractional float positive overflow: 5.2e9 * 1h",
 			count:       5.2e9,
 			unit:        time.Hour,
 			expectError: true,
 		},
-		// 1.5e15 * 10ms: 1.5e15 * 1e7 = 1.5e22 (way beyond MaxInt64)
 		{
 			name:        "fractional float positive overflow: 1.5e15 * 10ms",
 			count:       1.5e15,
 			unit:        10 * time.Millisecond,
 			expectError: true,
 		},
-
-		// 1.1 * maxDuration: non-integer count, overflows via float-path range check
-		// (safecast succeeds for 1.1→1; the integer-value check fails; float mul overflows)
 		{
 			name:        "float-path overflow: 1.1 * maxDuration",
 			count:       1.1,
 			unit:        maxDuration,
 			expectError: true,
 		},
-		// Regression for the >= boundary: 1.5 * 6148914691236516864 has exact product
-		// 9223372036854775296, which is not representable as float64 at this scale and
-		// rounds UP to float64(maxDuration) = 2^63. The check must be >= not >, because
-		// result == float64(maxDuration) already overflows int64.
+		// 1.5 * 6148914691236516864 = 9223372036854775296 (exact), which rounds UP
+		// to float64(maxDuration) = 2^63 — caught by >= but not by >.
 		{
 			name:        "float-path overflow: float64 product rounds to float64(maxDuration)",
 			count:       1.5,
 			unit:        time.Duration(6148914691236516864),
 			expectError: true,
 		},
-
-		// Negative underflow: non-integer negative float that goes below MinInt64
-		// -9.5e18 * 1ns = -9.5e18 (below MinInt64 = -9.223e18)
 		{
 			name:        "fractional float negative underflow: -9.5e18 * 1ns",
 			count:       -9.5e18,
 			unit:        time.Duration(1),
 			expectError: true,
 		},
-		// -1.1 * maxDuration: non-integer count, underflows via float-path range check
 		{
 			name:        "float-path underflow: -1.1 * maxDuration",
 			count:       -1.1,
 			unit:        maxDuration,
 			expectError: true,
 		},
-		// -5.2e9 * 1h: -5.2e9 * 3.6e12 = -1.872e22
 		{
 			name:        "fractional float negative underflow: -5.2e9 * 1h",
 			count:       -5.2e9,
 			unit:        time.Hour,
 			expectError: true,
 		},
-		// -1.5e15 * 10ms: -1.5e15 * 1e7 = -1.5e22
 		{
 			name:        "fractional float negative underflow: -1.5e15 * 10ms",
 			count:       -1.5e15,
@@ -610,7 +595,6 @@ func TestToDurationFloatMultiplicationOverflow(t *testing.T) {
 			_, err := ToDuration(tt.count, tt.unit)
 			if tt.expectError {
 				require.Error(t, err, "should detect float multiplication overflow/underflow")
-				// Should report float overflow or underflow
 				errMsg := err.Error()
 				hasOverflowMsg := (strings.Contains(errMsg, "overflow") ||
 					strings.Contains(errMsg, "underflow") ||
