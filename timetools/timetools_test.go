@@ -529,12 +529,28 @@ func TestToDurationFloatMultiplicationOverflow(t *testing.T) {
 			expectError: true,
 		},
 
+		// 1.1 * maxDuration: non-integer count, overflows via float-path range check
+		// (safecast succeeds for 1.1→1; the integer-value check fails; float mul overflows)
+		{
+			name:        "float-path overflow: 1.1 * maxDuration",
+			count:       1.1,
+			unit:        maxDuration,
+			expectError: true,
+		},
+
 		// Negative underflow: non-integer negative float that goes below MinInt64
 		// -9.5e18 * 1ns = -9.5e18 (below MinInt64 = -9.223e18)
 		{
 			name:        "fractional float negative underflow: -9.5e18 * 1ns",
 			count:       -9.5e18,
 			unit:        time.Duration(1),
+			expectError: true,
+		},
+		// -1.1 * maxDuration: non-integer count, underflows via float-path range check
+		{
+			name:        "float-path underflow: -1.1 * maxDuration",
+			count:       -1.1,
+			unit:        maxDuration,
 			expectError: true,
 		},
 		// -5.2e9 * 1h: -5.2e9 * 3.6e12 = -1.872e22

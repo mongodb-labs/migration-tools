@@ -26,6 +26,10 @@ func ToDuration[T realNumber](count T, unit time.Duration) (time.Duration, error
 		return 0, fmt.Errorf("invalid time unit (%s): must be positive", unit)
 	}
 
+	if f := float64(count); math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, fmt.Errorf("invalid count (%v): must be finite", count)
+	}
+
 	countAsDuration, err := safecast.Convert[time.Duration](count)
 	if err != nil {
 		// Workaround for https://github.com/ccoVeille/go-safecast/pull/145:
