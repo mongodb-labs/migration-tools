@@ -481,19 +481,21 @@ func TestToDurationFloatBoundary(t *testing.T) {
 // rejects tiny negative floats that truncate to 0.
 func TestToDurationTinyNegativeFloat(t *testing.T) {
 	cases := []struct {
-		name  string
-		count float64
+		name     string
+		count    float64
+		expected time.Duration
 	}{
-		{"negative 1e-100", -1e-100},
-		{"negative SmallestNonzeroFloat64", -math.SmallestNonzeroFloat64},
-		{"negative SmallestNonzeroFloat32 as float64", -float64(math.SmallestNonzeroFloat32)},
-		{"not-as-tiny negative", -4.9e-10},
+		{"negative 1e-100", -1e-100, 0},
+		{"negative SmallestNonzeroFloat64", -math.SmallestNonzeroFloat64, 0},
+		{"negative SmallestNonzeroFloat32 as float64", -float64(math.SmallestNonzeroFloat32), 0},
+		{"not-as-tiny negative", -4.9e-10, 0},
+		{"negative half-second", -0.5, -500 * time.Millisecond},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := ToDuration(tt.count, time.Second)
 			require.NoError(t, err)
-			assert.Equal(t, time.Duration(0), result)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
