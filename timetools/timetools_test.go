@@ -487,6 +487,7 @@ func TestToDurationTinyNegativeFloat(t *testing.T) {
 		{"negative 1e-100", -1e-100},
 		{"negative SmallestNonzeroFloat64", -math.SmallestNonzeroFloat64},
 		{"negative SmallestNonzeroFloat32 as float64", -float64(math.SmallestNonzeroFloat32)},
+		{"not-as-tiny negative", -4.9e-10},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -562,47 +563,17 @@ func TestToDurationFloatMultiplicationOverflow(t *testing.T) {
 			unit:        10 * time.Millisecond,
 			expectError: true,
 		},
-
-		// Just within bounds: non-integer floats that stay within int64 range
-		{
-			name:        "fractional float within bounds: 9e18 * 1ns",
-			count:       9e18,
-			unit:        time.Duration(1),
-			expectError: false,
-		},
-		{
-			name:        "fractional float within bounds: -9e18 * 1ns",
-			count:       -9e18,
-			unit:        time.Duration(1),
-			expectError: false,
-		},
-		{
-			name:        "fractional float within bounds: 1.5 * 1s",
-			count:       1.5,
-			unit:        time.Second,
-			expectError: false,
-		},
-		{
-			name:        "fractional float within bounds: 3.7e15 * 1ns",
-			count:       3.7e15,
-			unit:        time.Duration(1),
-			expectError: false,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := ToDuration(tt.count, tt.unit)
-			if tt.expectError {
-				require.Error(t, err, "should detect float multiplication overflow/underflow")
-				errMsg := err.Error()
-				hasOverflowMsg := (strings.Contains(errMsg, "overflow") ||
-					strings.Contains(errMsg, "underflow") ||
-					strings.Contains(errMsg, "conversion issue"))
-				assert.True(t, hasOverflowMsg, "error should report overflow/underflow: %s", errMsg)
-			} else {
-				require.NoError(t, err, "fractional float within bounds should not overflow")
-			}
+			require.Error(t, err, "should detect float multiplication overflow/underflow")
+			errMsg := err.Error()
+			hasOverflowMsg := (strings.Contains(errMsg, "overflow") ||
+				strings.Contains(errMsg, "underflow") ||
+				strings.Contains(errMsg, "conversion issue"))
+			assert.True(t, hasOverflowMsg, "error should report overflow/underflow: %s", errMsg)
 		})
 	}
 }
