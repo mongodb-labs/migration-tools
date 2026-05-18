@@ -65,24 +65,23 @@ func splitLogs[T any](in []Log[T]) ([]time.Time, []T) {
 
 func TestRatePer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		history := New[int64](time.Minute)
+		h := NewNumeric[int64](time.Minute)
 
-		history.Add(123)
+		// 60 units logged in a 1-minute window → 1/sec, 60/min.
+		h.Add(60)
+		assert.EqualValues(t, 1, h.RatePer(time.Second))
+		assert.EqualValues(t, 60, h.RatePer(time.Minute))
 
-		time.Sleep(time.Second)
+		// Extrapolation: unit > TTL.
+		assert.InDelta(t, 3600, h.RatePer(time.Hour), 1e-6)
 
-		perSec := RatePer(history.Get(), time.Second)
-		assert.EqualValues(t, 123, perSec)
+		// A second Add accumulates in the same window.
+		h.Add(60)
+		assert.EqualValues(t, 2, h.RatePer(time.Second))
+		assert.EqualValues(t, 120, h.RatePer(time.Minute))
 
-		perMin := RatePer(history.Get(), time.Minute)
-		assert.EqualValues(t, 123*60, perMin)
-
-		history.Add(123)
-
-		perSec = RatePer(history.Get(), time.Second)
-		assert.EqualValues(t, 246, perSec)
-
-		perMin = RatePer(history.Get(), time.Minute)
-		assert.EqualValues(t, 246*60, perMin)
+		// After the TTL elapses all logs have expired; rate drops to zero.
+		time.Sleep(time.Minute + time.Second)
+		assert.EqualValues(t, 0, h.RatePer(time.Second))
 	})
 }

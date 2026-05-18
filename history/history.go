@@ -1,19 +1,9 @@
 // Package history exposes a time-bounded queue. It’s ideal for tracking
 // historical events that “expire” after a certain time.
-//
-// A typical use would be to compute rates. The following, for example,
-// computes a per-second average over 1 minute:
-//
-//	writesHistory := history.New[int](time.Minute)
-//
-//	writesHistory.Add(123)
-//	writesHistory.Add(234)
-//
-//	logs := writesHistory.Get()
-//	perSecond := history.RatePer(logs, time.Second)
 package history
 
 import (
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -38,6 +28,9 @@ type Log[T any] struct {
 }
 
 // New creates & returns a new History.
+//
+// See NewNumeric if you want a History of real numbers,
+// with a convenient method for computing rates.
 func New[T any](ttl time.Duration) *History[T] {
 	return &History[T]{
 		ttl: ttl,
@@ -105,15 +98,26 @@ func SumLogs[T realNumber](l []Log[T]) T {
 	return sum
 }
 
-// RatePer computes a rate per unit duration. For example, if you pass
-// time.Second as the duration, the return will be the logs’ per-second
-// average.
-func RatePer[T realNumber](logs []Log[T], dur time.Duration) float64 {
-	if len(logs) == 0 {
-		return 0
+// NumericHistory is a History of real numbers, with a convenient method for
+// computing rates. (See RatePer.)
+type NumericHistory[T realNumber] struct {
+	*History[T]
+}
+
+// NewNumeric creates & returns a new NumericHistory.
+func NewNumeric[T realNumber](ttl time.Duration) NumericHistory[T] {
+	return NumericHistory[T]{
+		History: New[T](ttl),
+	}
+}
+
+// RatePer computes the average rate of change per unit time.
+func (nh NumericHistory[T]) RatePer(unit time.Duration) float64 {
+	if unit == 0 {
+		panic(fmt.Sprintf("unit (%s) must be non-zero", unit))
 	}
 
-	denom := float64(time.Since(logs[0].At)) / float64(dur)
+	denom := float64(nh.ttl) / float64(unit)
 
-	return float64(SumLogs(logs)) / denom
+	return float64(SumLogs(nh.Get())) / denom
 }
