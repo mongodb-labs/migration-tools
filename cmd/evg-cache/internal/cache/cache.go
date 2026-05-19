@@ -1,0 +1,214 @@
+// Package cache generates Evergreen CI commands for S3-backed artifact caching.
+package cache
+
+import (
+	"fmt"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/evergreen-ci/shrub"
+	"github.com/mongodb-labs/migration-tools/evergreen/s3"
+	"github.com/mongodb-labs/migration-tools/evergreen/subprocessexec"
+)
+
+var validName = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
+
+const (
+	distroIDExpansionFile = "distro-id.yml"
+	cacheKeyExpansionFile = "cache-key.yml"
+)
+
+// Config defines how a cache artifact is identified and stored in S3.
+// Use NewBuilder to construct.
+type Config struct {
+	Bucket            string
+	Namespace         string
+	Name              string
+	DisplayName       string
+	Artifact          string
+	CacheHitExpansion string
+	// ScriptDir is the path to the runtime scripts directory on the agent,
+	// always "./evg-cache-scripts".
+	ScriptDir     string
+	KeyFiles      []string
+	KeyExpansions []string
+	CachePaths    []string
+}
+
+// Builder constructs a Config, validating that all required fields are set.
+type Builder struct {
+	config Config
+}
+
+// NewBuilder starts a new Builder for the named cache.
+// Returns an error if name does not match [a-zA-Z0-9-]+.
+func NewBuilder(name string) (*Builder, error) {
+	if !validName.MatchString(name) {
+		return nil, fmt.Errorf("cache.Builder: Name %#q must match [a-zA-Z0-9-]+", name)
+	}
+	return &Builder{config: Config{Name: name}}, nil
+}
+
+func (b *Builder) WithBucket(bucket string) *Builder {
+	b.config.Bucket = bucket
+	return b
+}
+
+func (b *Builder) WithNamespace(namespace string) *Builder {
+	b.config.Namespace = namespace
+	return b
+}
+
+func (b *Builder) WithKeyFiles(files []string) *Builder {
+	b.config.KeyFiles = files
+	return b
+}
+
+func (b *Builder) WithCachePaths(paths []string) *Builder {
+	b.config.CachePaths = paths
+	return b
+}
+
+// WithKeyExpansions sets the Evergreen expansion values to include in the cache key hash.
+// Use this to vary the cache key by expansion values such as build variant or OS version.
+func (b *Builder) WithKeyExpansions(expansions []string) *Builder {
+	b.config.KeyExpansions = expansions
+	return b
+}
+
+// WithDisplayName sets the human-readable label used for the S3 put operation.
+// If not called, the display name defaults to the cache name.
+func (b *Builder) WithDisplayName(name string) *Builder {
+	b.config.DisplayName = name
+	return b
+}
+
+// Build validates all required fields and returns the Config.
+// Panics on missing required fields so misconfiguration is caught early.
+func (b *Builder) Build() Config {
+	switch {
+	case b.config.Bucket == "":
+		panic("cache.Builder: Bucket is required")
+	case b.config.Namespace == "":
+		panic("cache.Builder: Namespace is required")
+	case len(b.config.KeyFiles) == 0:
+		panic("cache.Builder: KeyFiles is required")
+	case len(b.config.CachePaths) == 0:
+		panic("cache.Builder: CachePaths is required")
+	}
+	b.config.ScriptDir = "./evg-cache-scripts"
+	b.config.Artifact = b.config.Name + ".txz"
+	b.config.CacheHitExpansion = strings.ReplaceAll(b.config.Name, "-", "_") + "_cache_hit"
+	// Default DisplayName to Name for library callers who do not call WithDisplayName.
+	// The CLI layer also applies this default before calling Build, so for CLI-driven
+	// builds this guard is a no-op.
+	if b.config.DisplayName == "" {
+		b.config.DisplayName = b.config.Name
+	}
+	return b.config
+}
+
+// ComputeKeyCommands returns commands that set ${distro_id} and ${cache_key} expansions.
+func (c *Config) ComputeKeyCommands() []*shrub.CommandDefinition {
+	keyArgs := []string{c.scriptPath("compute-cache-key.py")}
+	for _, f := range c.KeyFiles {
+		keyArgs = append(keyArgs, "--file", f)
+	}
+	for _, e := range c.KeyExpansions {
+		keyArgs = append(keyArgs, "--key-expansion", e)
+	}
+	keyArgs = append(keyArgs, "--output", filepath.Join("${workdir}", cacheKeyExpansionFile))
+
+	return []*shrub.CommandDefinition{
+		subprocessexec.NewCmdBuilder(c.scriptPath("set-distro-id-expansion.sh")).
+			WithArgs("${workdir}").
+			WithWorkingDirectory("${workdir}").
+			Build(),
+
+		shrub.CmdExpansionsUpdate{
+			File: filepath.Join("${workdir}", distroIDExpansionFile),
+		}.Resolve(),
+
+		subprocessexec.NewCmdBuilder(c.scriptPath("run-python-script.sh")).
+			WithArgs(keyArgs...).
+			WithWorkingDirectory("${workdir}").
+			Build(),
+
+		shrub.CmdExpansionsUpdate{
+			File: filepath.Join("${workdir}", cacheKeyExpansionFile),
+		}.Resolve(),
+	}
+}
+
+// RestoreCommands returns commands to download and extract the cached artifact.
+// A cache miss sets the cache-hit expansion to "" without failing the task.
+func (c *Config) RestoreCommands() []*shrub.CommandDefinition {
+	expansionName := c.CacheHitExpansion
+	expansionFile := filepath.Join("${workdir}", expansionName+".yml")
+
+	return []*shrub.CommandDefinition{
+		s3.NewGetCmdBuilder(c.S3Path()).
+			WithBucket(c.Bucket).
+			WithLocalFile(filepath.Join("${workdir}", c.Artifact)).
+			WithIsOptional().
+			Build(),
+
+		subprocessexec.NewCmdBuilder(c.scriptPath("run-python-script.sh")).
+			WithArgs(
+				c.scriptPath("restore-cache-artifact.py"),
+				"--artifact", c.Artifact,
+				"--output", expansionFile,
+				"--expansion-name", expansionName,
+			).
+			WithWorkingDirectory("${workdir}").
+			Build(),
+
+		shrub.CmdExpansionsUpdate{
+			File: expansionFile,
+		}.Resolve(),
+	}
+}
+
+// SaveCommands returns commands to create the artifact tarball (on a cache miss)
+// and upload it to S3.
+func (c *Config) SaveCommands() []*shrub.CommandDefinition {
+	createArgs := []string{
+		c.scriptPath("create-cache-artifact.py"),
+		"--artifact", c.Artifact,
+		"--cache-hit-expansion", c.CacheHitExpansion,
+	}
+	for _, p := range c.CachePaths {
+		createArgs = append(createArgs, "--path", p)
+	}
+
+	return []*shrub.CommandDefinition{
+		subprocessexec.NewCmdBuilder(c.scriptPath("run-python-script.sh")).
+			WithArgs(createArgs...).
+			WithIncludeExpansionsInEnv(c.CacheHitExpansion).
+			WithWorkingDirectory("${workdir}").
+			Build(),
+
+		s3.NewPutCmdBuilder().
+			WithBucket(c.Bucket).
+			WithRemoteFile(c.S3Path()).
+			WithLocalFile(filepath.Join("${workdir}", c.Artifact)).
+			WithContentType(s3.BinaryContentType).
+			WithDisplayName(c.DisplayName).
+			WithIsOptional().
+			WithSkipExisting().
+			Build(),
+	}
+}
+
+// S3Path returns the S3 remote file path with runtime expansion variables.
+// The namespace is used directly as the S3 path prefix (no project prefix added).
+func (c *Config) S3Path() string {
+	return fmt.Sprintf("%s/${distro_id}/${cache_key}/%s", c.Namespace, c.Artifact)
+}
+
+// scriptPath returns the full path to a script using the configured ScriptDir.
+// Uses string concatenation (not filepath.Join) to preserve a leading "./" prefix.
+func (c *Config) scriptPath(script string) string {
+	return c.ScriptDir + "/" + script
+}
