@@ -21,7 +21,7 @@ type Buffer struct {
 
 var _ io.Writer = &Buffer{}
 
-// Bytes is like buffer.Bytes, but the returned slice is a clone.
+// Bytes is like bytes.Buffer.Bytes, but the returned slice is a clone.
 // Because of this, further Buffer modifications DO NOT affect slices
 // that this function returns.
 func (b *Buffer) Bytes() []byte {
@@ -39,7 +39,7 @@ func (b *Buffer) Write(p []byte) (int, error) {
 	return b.builder.Write(p)
 }
 
-// Reset() resets the underlying buffer.
+// Reset resets the underlying buffer.
 func (b *Buffer) Reset() {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
