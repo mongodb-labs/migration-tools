@@ -1,7 +1,6 @@
 package timetools
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -32,14 +31,7 @@ func ToDuration[T realNumber](count T, unit time.Duration) (time.Duration, error
 
 	countAsDuration, err := safecast.Convert[time.Duration](count)
 	if err != nil {
-		// Workaround for https://github.com/ccoVeille/go-safecast/pull/145:
-		// safecast compares signs before truncating, so tiny negative floats
-		// like -1e-100 (which truncate to 0) are spuriously rejected.
-		if errors.Is(err, safecast.ErrRangeOverflow) && math.Trunc(float64(count)) == 0 {
-			countAsDuration = 0
-		} else {
-			return 0, fmt.Errorf("cannot convert count %v to %T: %w", count, time.Duration(0), err)
-		}
+		return 0, fmt.Errorf("cannot convert count %v to %T: %w", count, time.Duration(0), err)
 	}
 
 	// If the count is an integer value, then just convert to a Duration.
