@@ -61,7 +61,7 @@ func None[T any]() Option[T] {
 // of the provided expression. For example, if you have a value `obj`, you can
 // call `NoneOf(obj)` to get an empty Option for `obj`’s static type without
 // writing the type out explicitly.
-func NoneOf[T any](v T) Option[T] {
+func NoneOf[T any](_ T) Option[T] {
 	return None[T]()
 }
 
