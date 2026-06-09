@@ -153,7 +153,7 @@ func (o Option[T]) OrElse(fallback T) T {
 // This simplifies “evacuation” of Options. For example:
 //
 //	opt = opt.ToNone()
-func (o Option[T]) ToNone() Option[T] {
+func (Option[T]) ToNone() Option[T] {
 	return None[T]()
 }
 
