@@ -333,6 +333,11 @@ func Test_Map(t *testing.T) {
 	})
 }
 
+func Test_None_Conveniences(t *testing.T) {
+	assert.Equal(t, None[int](), Some(123).ToNone())
+	assert.Equal(t, None[int](), NoneOf(123))
+}
+
 func assertPanics[T any](t *testing.T, val T) {
 	t.Helper()
 
