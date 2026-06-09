@@ -57,11 +57,11 @@ func None[T any]() Option[T] {
 	return Option[T]{}
 }
 
-// NoneOf is a convenience that calls None on the given value’s type.
-// So, for example, if you have a value `obj`, you can call `NoneOf(obj)`
-// to get an empty Option for `obj`’s type. (This frees you from writing out
-// that type explicitly.)
-func NoneOf[T any](_ T) Option[T] {
+// NoneOf is a convenience that calls None for the static (compile-time) type
+// of the provided expression. For example, if you have a value `obj`, you can
+// call `NoneOf(obj)` to get an empty Option for `obj`’s static type without
+// writing the type out explicitly.
+func NoneOf[T any](v T) Option[T] {
 	return None[T]()
 }
 
