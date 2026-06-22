@@ -18,6 +18,7 @@ func Mean[T RealNumber](nums []T) option.Option[float64] {
 		return option.None[float64]()
 	}
 
+	// To avoid integer overflow, convert all values to floats before summing.
 	sum := lo.SumBy(nums, func(n T) float64 { return float64(n) })
 	mean := sum / float64(len(nums))
 	return option.Some(mean)
