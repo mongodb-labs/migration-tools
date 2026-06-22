@@ -39,4 +39,9 @@ func TestMean(t *testing.T) {
 	t.Run("int64 slice", func(t *testing.T) {
 		assert.Equal(t, option.Some(5.0), Mean([]int64{3, 5, 7}))
 	})
+
+	t.Run("large int64 does not overflow", func(t *testing.T) {
+		const big int64 = 9_223_372_036_854_775_000
+		assert.Equal(t, option.Some(float64(big)), Mean([]int64{big, big}))
+	})
 }
