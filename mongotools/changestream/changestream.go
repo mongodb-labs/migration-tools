@@ -2,6 +2,7 @@ package changestream
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -26,12 +27,35 @@ var (
 	closeCalledErr = fmt.Errorf("close called on ParallelChangeStream")
 )
 
-type Options struct {
-	Pipeline mongo.Pipeline
-	Streams  int
-	Options  options.Lister[options.ChangeStreamOptions]
+// ParallelChangeStream runs multiple change streams in parallel and merges
+// their results into a single stream. Change event order is preserved, and
+// causally-consistent sessions are updated accordingly.
+type ParallelChangeStream struct {
+	channels     []chan eventsBatch
+	curChanBatch []eventsBatch
+	errFuture    *future.Future[error]
+	nextErr      error
+	current      bson.Raw
+	canceler     context.CancelCauseFunc
 }
 
+// Options are the options for creating a ParallelChangeStream.
+type Options struct {
+	// Streams is the number of parallel change streams to use.
+	Streams int
+
+	// Pipeline is the aggregation pipeline to apply to the change stream.
+	Pipeline mongo.Pipeline
+
+	// DispatchRef identifies the field in the change event used to dispatch a
+	// given event to a stream. If not provided, the default is `$_id`.
+	DispatchRef string
+
+	// Options are the change stream options to use.
+	Options options.Lister[options.ChangeStreamOptions]
+}
+
+// Watcher abstracts a struct that can create a change stream.
 type Watcher interface {
 	Watch(ctx context.Context, pipeline any,
 		opts ...options.Lister[options.ChangeStreamOptions],
@@ -48,12 +72,13 @@ type dbLike interface {
 	Client() *mongo.Client
 }
 
-type EventsBatch struct {
+type eventsBatch struct {
 	Events        []bson.Raw
 	OperationTime bson.Timestamp
 	ClusterTime   bson.Raw
 }
 
+// NewParallel creates a new ParallelChangeStream.
 func NewParallel(
 	ctxIn context.Context,
 	watcher Watcher,
@@ -62,6 +87,11 @@ func NewParallel(
 	if opts.Streams <= 0 {
 		return nil, fmt.Errorf("streams (%d) must be positive", opts.Streams)
 	}
+
+	dispatchInput := cmp.Or(
+		opts.DispatchRef,
+		"$_id",
+	)
 
 	createPipeline := func(threadNum int) mongo.Pipeline {
 		return lo.Concat(
@@ -75,7 +105,7 @@ func NewParallel(
 									{"$mod", bson.A{
 										bson.D{{"$toHashedIndexKey", bson.D{
 											{"$_internalKeyStringValue", bson.D{
-												{"input", "$_id"},
+												{"input", dispatchInput},
 											}},
 										}}},
 										opts.Streams,
@@ -111,7 +141,7 @@ func NewParallel(
 		}
 	}
 
-	channels := make([]chan EventsBatch, opts.Streams)
+	channels := make([]chan eventsBatch, opts.Streams)
 
 	ctx, canceler := contextplus.WithCancelCause(ctxIn)
 
@@ -129,7 +159,7 @@ func NewParallel(
 	}
 
 	for threadNum := range opts.Streams {
-		curChan := make(chan EventsBatch, 10)
+		curChan := make(chan eventsBatch, 10)
 		channels[threadNum] = curChan
 
 		wg.Go(func() {
@@ -170,7 +200,7 @@ func NewParallel(
 					case <-sctx.Done():
 						setErr(sctx.Err())
 						return
-					case curChan <- EventsBatch{
+					case curChan <- eventsBatch{
 						OperationTime: *sess.OperationTime(),
 						ClusterTime:   sess.ClusterTime(),
 					}:
@@ -186,7 +216,7 @@ func NewParallel(
 					case <-sctx.Done():
 						setErr(sctx.Err())
 						return
-					case curChan <- EventsBatch{
+					case curChan <- eventsBatch{
 						Events:        slices.Clone(events),
 						OperationTime: *sess.OperationTime(),
 						ClusterTime:   sess.ClusterTime(),
@@ -202,27 +232,63 @@ func NewParallel(
 
 	return &ParallelChangeStream{
 		channels:     channels,
-		curChanBatch: make([]EventsBatch, opts.Streams),
+		curChanBatch: make([]eventsBatch, opts.Streams),
 		errFuture:    errFuture,
 		canceler:     canceler,
 	}, nil
 }
 
-type ParallelChangeStream struct {
-	channels     []chan EventsBatch
-	curChanBatch []EventsBatch
-	errFuture    *future.Future[error]
-	nextErr      error
-	current      bson.Raw
-	canceler     context.CancelCauseFunc
-}
-
+// Next iterates the change stream. It blocks until the next change event is
+// available, an error occurs, or the change stream is closed.
 func (pcs *ParallelChangeStream) Next(ctx context.Context) bool {
 	return pcs.next(ctx, true)
 }
 
+// TryNext is like Next, but it will only block long enough to send a single
+// `getMore` request to the server. If that response contains no events, this
+// returns false.
 func (pcs *ParallelChangeStream) TryNext(ctx context.Context) bool {
 	return pcs.next(ctx, false)
+}
+
+// Current returns the current change event.
+func (pcs *ParallelChangeStream) Current() bson.Raw {
+	return pcs.current
+}
+
+// Close closes the change stream. It is safe to call Close multiple times.
+func (pcs *ParallelChangeStream) Close() {
+	pcs.canceler(closeCalledErr)
+}
+
+// Err returns whatever error, if any, happened while iterating the change
+// stream. This may include errors from the underlying streams or from the
+// “top-level” stream (or both).
+func (pcs *ParallelChangeStream) Err() error {
+	nextErr := pcs.nextErr
+
+	var threadErr error
+
+	select {
+	case <-pcs.errFuture.Ready():
+		threadErr = pcs.errFuture.Get()
+
+		// Ignore the error if it was caused by Close() being called.
+		if errors.Is(threadErr, closeCalledErr) {
+			threadErr = nil
+		}
+	default:
+	}
+
+	if nextErr != nil {
+		if threadErr != nil {
+			return fmt.Errorf("thread error: %w; iteration error: %w", threadErr, nextErr)
+		}
+
+		return nextErr
+	}
+
+	return threadErr
 }
 
 func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
@@ -317,39 +383,4 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 	pcs.curChanBatch[nextChan].Events = pcs.curChanBatch[nextChan].Events[1:]
 
 	return true
-}
-
-func (pcs *ParallelChangeStream) Current() bson.Raw {
-	return pcs.current
-}
-
-func (pcs *ParallelChangeStream) Close() {
-	pcs.canceler(closeCalledErr)
-}
-
-func (pcs *ParallelChangeStream) Err() error {
-	nextErr := pcs.nextErr
-
-	var threadErr error
-
-	select {
-	case <-pcs.errFuture.Ready():
-		threadErr = pcs.errFuture.Get()
-
-		// Ignore the error if it was caused by Close() being called.
-		if errors.Is(threadErr, closeCalledErr) {
-			threadErr = nil
-		}
-	default:
-	}
-
-	if nextErr != nil {
-		if threadErr != nil {
-			return fmt.Errorf("thread error: %w; iteration error: %w", threadErr, nextErr)
-		}
-
-		return nextErr
-	}
-
-	return threadErr
 }
