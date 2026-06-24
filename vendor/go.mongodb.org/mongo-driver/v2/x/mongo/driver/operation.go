@@ -24,7 +24,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/internal/driverutil"
 	"go.mongodb.org/mongo-driver/v2/internal/handshake"
 	"go.mongodb.org/mongo-driver/v2/internal/logger"
-	"go.mongodb.org/mongo-driver/v2/internal/randutil"
 	"go.mongodb.org/mongo-driver/v2/internal/serverselector"
 	"go.mongodb.org/mongo-driver/v2/mongo/address"
 	"go.mongodb.org/mongo-driver/v2/mongo/readconcern"
@@ -36,6 +35,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/session"
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/wiremessage"
 )
+
+const defaultLocalThreshold = 15 * time.Millisecond
 
 var (
 	// ErrNoDocCommandResponse occurs when the server indicated a response existed, but none was found.
@@ -68,10 +69,6 @@ const (
 	cryptMinWireVersion int32 = 8
 	// minimum wire version necessary to use read snapshots
 	readSnapshotMinWireVersion int32 = 13
-
-	defaultLocalThreshold = 15 * time.Millisecond
-	backoffInitial        = 100 * time.Millisecond
-	backoffMax            = 10_000 * time.Millisecond
 )
 
 // RetryablePoolError is a connection pool error that can be retried while executing an operation.
@@ -84,27 +81,6 @@ type labeledError interface {
 	error
 	HasErrorLabel(string) bool
 }
-
-// retryBudget is a retry cap for an operation's retry loop. The zero value
-// is "unlimited" (no cap). Use capped(n) to construct a finite budget of n.
-//
-// TODO(GODRIVER-3650): Consider using the internal Optional type for this
-// instead of a custom struct.
-type retryBudget struct {
-	finite bool
-	max    uint
-}
-
-// allows reports whether the given retry attempt is within the budget.
-func (b retryBudget) allows(attempt uint) bool {
-	return !b.finite || attempt < b.max
-}
-
-// cappedRetryBudget returns a retry budget of n attempts.
-func cappedRetryBudget(n uint) retryBudget { return retryBudget{finite: true, max: n} }
-
-// unlimitedRetryBudget is the zero-valued, uncapped retry budget.
-func unlimitedRetryBudget() retryBudget { return retryBudget{} }
 
 // InvalidOperationError is returned from Validate and indicates that a required field is missing
 // from an instance of Operation.
@@ -331,14 +307,6 @@ type Operation struct {
 	// possible unless RetryNone is used.
 	RetryMode *RetryMode
 
-	// MaxAdaptiveRetries indicates the maximum number of times the driver should retry operations
-	// that fail with a server side overload error.
-	MaxAdaptiveRetries uint
-
-	// EnableOverloadRetargeting specifies whether the driver adds the previously failed server's address
-	// to the list of deprioritized server addresses.
-	EnableOverloadRetargeting bool
-
 	// Type specifies the kind of operation this is. There is only one mode that enables retry: Write.
 	// For more information about what this mode does, please refer to it's definition. Both Type and
 	// RetryMode must be set for retryability to be enabled.
@@ -386,10 +354,6 @@ type Operation struct {
 	// required.
 	Authenticator Authenticator
 
-	// SendAfterClusterTime enables sending "readConcern.afterClusterTime" for
-	// operations if they're run in causally-consistent sessions.
-	SendAfterClusterTime bool
-
 	// omitReadPreference is a boolean that indicates whether to omit the
 	// read preference from the command. This omition includes the case
 	// where a default read preference is used when the operation
@@ -400,6 +364,67 @@ type Operation struct {
 // shouldEncrypt returns true if this operation should automatically be encrypted.
 func (op Operation) shouldEncrypt() bool {
 	return op.Crypt != nil && !op.Crypt.BypassAutoEncryption()
+}
+
+// filterDeprioritizedServers will filter out the server candidates that have
+// been deprioritized by the operation due to failure.
+//
+// The server selector should try to select a server that is not in the
+// deprioritization list. However, if this is not possible (e.g. there are no
+// other healthy servers in the cluster), the selector may return a
+// deprioritized server.
+func filterDeprioritizedServers(candidates, deprioritized []description.Server) []description.Server {
+	if len(deprioritized) == 0 {
+		return candidates
+	}
+
+	dpaSet := make(map[address.Address]*description.Server)
+	for i, srv := range deprioritized {
+		dpaSet[srv.Addr] = &deprioritized[i]
+	}
+
+	allowed := []description.Server{}
+
+	// Iterate over the candidates and append them to the allowdIndexes slice if
+	// they are not in the deprioritizedServers list.
+	for _, candidate := range candidates {
+		if srv, ok := dpaSet[candidate.Addr]; !ok || !driverutil.EqualServers(*srv, candidate) {
+			allowed = append(allowed, candidate)
+		}
+	}
+
+	// If nothing is allowed, then all available servers must have been
+	// deprioritized. In this case, return the candidates list as-is so that the
+	// selector can find a suitable server
+	if len(allowed) == 0 {
+		return candidates
+	}
+
+	return allowed
+}
+
+// opServerSelector is a wrapper for the server selector that is assigned to the
+// operation. The purpose of this wrapper is to filter candidates with
+// operation-specific logic, such as deprioritizing failing servers.
+type opServerSelector struct {
+	selector             description.ServerSelector
+	deprioritizedServers []description.Server
+}
+
+// SelectServer will filter candidates with operation-specific logic before
+// passing them onto the user-defined or default selector.
+func (oss *opServerSelector) SelectServer(
+	topo description.Topology,
+	candidates []description.Server,
+) ([]description.Server, error) {
+	selectedServers, err := oss.selector.SelectServer(topo, candidates)
+	if err != nil {
+		return nil, err
+	}
+
+	filteredServers := filterDeprioritizedServers(selectedServers, oss.deprioritizedServers)
+
+	return filteredServers, nil
 }
 
 // selectServer handles performing server selection for an operation.
@@ -427,13 +452,15 @@ func (op Operation) selectServer(
 		}
 	}
 
-	// Wrap the selector to filter out deprioritized servers.
-	deprioritizedSelector := serverselector.NewDeprioritized(selector, deprioritized)
+	oss := &opServerSelector{
+		selector:             selector,
+		deprioritizedServers: deprioritized,
+	}
 
 	ctx = logger.WithOperationName(ctx, op.Name)
 	ctx = logger.WithOperationID(ctx, requestID)
 
-	return op.Deployment.SelectServer(ctx, deprioritizedSelector)
+	return op.Deployment.SelectServer(ctx, oss)
 }
 
 // getServerAndConnection should be used to retrieve a Server and Connection to execute an operation.
@@ -531,7 +558,7 @@ func (op Operation) Execute(ctx context.Context) error {
 		}
 	}
 
-	defaultBudget := cappedRetryBudget(0)
+	var retries int
 	if op.RetryMode != nil {
 		switch op.Type {
 		case Write:
@@ -540,23 +567,23 @@ func (op Operation) Execute(ctx context.Context) error {
 			}
 			switch *op.RetryMode {
 			case RetryOnce, RetryOncePerCommand:
-				defaultBudget = cappedRetryBudget(1)
+				retries = 1
 			case RetryContext:
-				defaultBudget = unlimitedRetryBudget()
+				retries = -1
 			}
 		case Read:
 			switch *op.RetryMode {
 			case RetryOnce, RetryOncePerCommand:
-				defaultBudget = cappedRetryBudget(1)
+				retries = 1
 			case RetryContext:
-				defaultBudget = unlimitedRetryBudget()
+				retries = -1
 			}
 		}
 
-		// If context is a Timeout context, automatically set retries to
-		// unlimited if retrying is enabled.
+		// If context is a Timeout context, automatically set retries to -1 (infinite) if retrying is
+		// enabled.
 		if csot.IsTimeoutContext(ctx) && op.RetryMode.Enabled() {
-			defaultBudget = unlimitedRetryBudget()
+			retries = -1
 		}
 	}
 
@@ -566,89 +593,54 @@ func (op Operation) Execute(ctx context.Context) error {
 	var operationErr WriteCommandError
 	var prevErr error
 	var prevIndefiniteErr error
-	var expDur time.Duration
-	var transactionState session.TransactionState
-	var isOverloadedError bool
-	var attempt uint
 	retrySupported := false
 	first := true
 	currIndex := 0
-	nextBudget := defaultBudget
 
 	// deprioritizedServers are a running list of servers that should be
-	// deprioritized during server selection. Servers are accumulated across
-	// retry attempts to avoid repeatedly selecting servers that have failed.
+	// deprioritized during server selection. Per the specifications, we should
+	// only ever deprioritize the "previous server".
 	var deprioritizedServers []description.Server
 
 	// resetForRetry records the error that caused the retry, decrements retries, and resets the
 	// retry loop variables to request a new server and a new connection for the next attempt.
-	resetForRetry := func(err error) error {
-		attempt++
+	resetForRetry := func(err error) {
+		retries--
 		prevErr = err
 
-		// If the "prevIndefiniteErr" is nil, then the current error is the first error encountered
-		// during the retry attempt cycle.
-		if prevIndefiniteErr == nil {
-			prevIndefiniteErr = err
-		}
-
-		// Set the previous indefinite error to be returned only if:
-		// 1. The error does not have a NoWritesPerformed label (the definite case).
-		// 2. The error is not a driver exception (e.g. timeouts, network errors).
-		// 3. The error is not a CSOT timeout.
+		// Set the previous indefinite error to be returned in any case where a retryable write error does not have a
+		// NoWritesPerfomed label (the definite case).
 		if lerr, ok := err.(labeledError); ok {
-			if !lerr.HasErrorLabel(NoWritesPerformed) {
-				var serverErr Error
-				isDriverException := errors.As(err, &serverErr) && serverErr.Code != 0
-				isCSOTTimeout := errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
-				if isDriverException && !isCSOTTimeout {
-					prevIndefiniteErr = err
-				}
+			// If the "prevIndefiniteErr" is nil, then the current error is the first error encountered
+			// during the retry attempt cycle. We must persist the first error in the case where all
+			// following errors are labeled "NoWritesPerformed", which would otherwise raise nil as the
+			// error.
+			if prevIndefiniteErr == nil {
+				prevIndefiniteErr = lerr
+			}
+
+			// If the error is not labeled NoWritesPerformed and is retryable, then set the previous
+			// indefinite error to be the current error.
+			if !lerr.HasErrorLabel(NoWritesPerformed) && lerr.HasErrorLabel(RetryableWriteError) {
+				prevIndefiniteErr = err
 			}
 		}
 
 		// If we got a connection, close it immediately to release pool resources
 		// for subsequent retries.
 		if conn != nil {
-			if op.Deployment.Kind() == description.TopologyKindSharded ||
-				(isOverloadedError && op.EnableOverloadRetargeting) {
-				deprioritizedServers = append(deprioritizedServers, conn.Description())
+			// If we are dealing with a sharded cluster, then mark the failed server
+			// as "deprioritized".
+			if op.Deployment.Kind() == description.TopologyKindSharded {
+				deprioritizedServers = []description.Server{conn.Description()}
 			}
-			conn.Close()
-		}
 
-		// Revert TransactionState as ApplyCommand() advances the state.
-		if op.Client != nil {
-			op.Client.TransactionState = transactionState
+			conn.Close()
 		}
 
 		// Set the server and connection to nil to request a new server and connection.
 		srvr = nil
 		conn = nil
-
-		if isOverloadedError {
-			isOverloadedError = false
-			if expDur == 0 {
-				expDur = backoffInitial
-			} else {
-				expDur *= 2
-				if expDur > backoffMax {
-					expDur = backoffMax
-				}
-			}
-			backoff := randutil.JitterDuration(expDur)
-			if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < backoff {
-				return err
-			}
-			sleep := time.NewTimer(backoff)
-			select {
-			case <-ctx.Done():
-				sleep.Stop()
-				return err
-			case <-sleep.C:
-			}
-		}
-		return nil
 	}
 
 	wm := memoryPool.Get().(*[]byte)
@@ -673,26 +665,17 @@ func (op Operation) Execute(ctx context.Context) error {
 			return prevErr
 		}
 
-		currentBudget := nextBudget
-		nextBudget = defaultBudget
-
 		requestID := wiremessage.NextRequestID()
-
-		if op.Client != nil {
-			transactionState = op.Client.TransactionState
-		}
 
 		// If the server or connection are nil, try to select a new server and get a new connection.
 		if srvr == nil || conn == nil {
 			srvr, conn, err = op.getServerAndConnection(ctx, requestID, deprioritizedServers)
 			if err != nil {
-				// If the returned error is retryable and the budget allows another
-				// attempt, retry the operation. Set the server and connection to
-				// nil to request a new server and connection.
-				if rerr, ok := err.(RetryablePoolError); ok && rerr.Retryable() && currentBudget.allows(attempt) {
-					if err = resetForRetry(err); err != nil {
-						return err
-					}
+				// If the returned error is retryable and there are retries remaining (negative
+				// retries means retry indefinitely), then retry the operation. Set the server
+				// and connection to nil to request a new server and connection.
+				if rerr, ok := err.(RetryablePoolError); ok && rerr.Retryable() && retries != 0 {
+					resetForRetry(err)
 					continue
 				}
 
@@ -857,13 +840,6 @@ func (op Operation) Execute(ctx context.Context) error {
 				return ErrUnsupportedStorageEngine
 			}
 
-			isOverloadedError = tt.HasErrorLabel(ErrSystemOverloadedError)
-			if isOverloadedError && op.MaxAdaptiveRetries != 0 {
-				// If maxAdaptiveRetries is set, we want to retry overload errors until
-				// we hit that max.
-				nextBudget = cappedRetryBudget(op.MaxAdaptiveRetries)
-				currentBudget = nextBudget
-			}
 			connDesc := conn.Description()
 			retryableErr := tt.Retryable(connDesc.Kind, connDesc.WireVersion)
 			preRetryWriteLabelVersion := connDesc.WireVersion != nil && connDesc.WireVersion.Max < 9
@@ -874,21 +850,17 @@ func (op Operation) Execute(ctx context.Context) error {
 			if retryableErr && preRetryWriteLabelVersion && retryEnabled && !inTransaction {
 				tt.Labels = append(tt.Labels, RetryableWriteError)
 			}
-			olRetryErr := tt.HasErrorLabel(ErrRetryableError) && isOverloadedError
-			needRetry := (retrySupported && retryEnabled && retryableErr) || (op.MaxAdaptiveRetries != 0 && olRetryErr)
 
 			// If retries are supported for the current operation on the first server description,
-			// the error is considered retryable, and the budget allows another
-			// attempt, retry the operation.
-			if needRetry && currentBudget.allows(attempt) {
-				if op.Client != nil && op.Client.Committing && !olRetryErr {
+			// the error is considered retryable, and there are retries remaining (negative retries
+			// means retry indefinitely), then retry the operation.
+			if retrySupported && retryEnabled && retryableErr && retries != 0 {
+				if op.Client != nil && op.Client.Committing {
 					// Apply majority write concern for retries
 					op.Client.UpdateCommitTransactionWriteConcern()
 					op.WriteConcern = op.Client.CurrentWc
 				}
-				if err = resetForRetry(tt); err != nil {
-					return err
-				}
+				resetForRetry(tt)
 				continue
 			}
 
@@ -968,9 +940,7 @@ func (op Operation) Execute(ctx context.Context) error {
 						op.Client.UpdateCommitTransactionWriteConcern()
 						op.WriteConcern = op.Client.CurrentWc
 					}
-					if err = resetForRetry(tt); err != nil {
-						return err
-					}
+					resetForRetry(tt)
 					continue
 				}
 			}
@@ -984,13 +954,6 @@ func (op Operation) Execute(ctx context.Context) error {
 				return ErrUnsupportedStorageEngine
 			}
 
-			isOverloadedError = tt.HasErrorLabel(ErrSystemOverloadedError)
-			if isOverloadedError && op.MaxAdaptiveRetries != 0 {
-				// If maxAdaptiveRetries is set, we want to retry overload errors until
-				// we hit that max.
-				nextBudget = cappedRetryBudget(op.MaxAdaptiveRetries)
-				currentBudget = nextBudget
-			}
 			connDesc := conn.Description()
 			var retryableErr bool
 			if op.Type == Write {
@@ -1007,21 +970,17 @@ func (op Operation) Execute(ctx context.Context) error {
 			} else {
 				retryableErr = tt.RetryableRead()
 			}
-			olRetryErr := tt.HasErrorLabel(ErrRetryableError) && isOverloadedError
-			needRetry := (retrySupported && retryEnabled && retryableErr) || (op.MaxAdaptiveRetries != 0 && olRetryErr)
 
 			// If retries are supported for the current operation on the first server description,
-			// the error is considered retryable, and the budget allows another
-			// attempt, retry the operation.
-			if needRetry && currentBudget.allows(attempt) {
-				if op.Client != nil && op.Client.Committing && !olRetryErr {
+			// the error is considered retryable, and there are retries remaining (negative retries
+			// means retry indefinitely), then retry the operation.
+			if retrySupported && retryEnabled && retryableErr && retries != 0 {
+				if op.Client != nil && op.Client.Committing {
 					// Apply majority write concern for retries
 					op.Client.UpdateCommitTransactionWriteConcern()
 					op.WriteConcern = op.Client.CurrentWc
 				}
-				if err = resetForRetry(tt); err != nil {
-					return err
-				}
+				resetForRetry(tt)
 				continue
 			}
 
@@ -1095,14 +1054,11 @@ func (op Operation) Execute(ctx context.Context) error {
 				op.Client.IncrementTxnNumber()
 
 				// Reset the retries number for RetryOncePerCommand unless context is a Timeout context, in
-				// which case retries should remain as nil (as many times as possible).
+				// which case retries should remain as -1 (as many times as possible).
 				if *op.RetryMode == RetryOncePerCommand && !csot.IsTimeoutContext(ctx) {
-					nextBudget = cappedRetryBudget(1)
+					retries = 1
 				}
 			}
-			isOverloadedError = false
-			expDur = 0
-			attempt = 0
 			currIndex += startedInfo.processedBatches
 			op.Batches.AdvanceBatches(startedInfo.processedBatches)
 			continue
@@ -1608,15 +1564,6 @@ func (op Operation) addReadConcern(dst []byte, desc description.SelectedServer) 
 
 	// start transaction must append afterclustertime IF causally consistent and operation time exists
 	if rc == nil && client != nil && client.TransactionStarting() && client.Consistent && client.OperationTime != nil {
-		rc = &readconcern.ReadConcern{}
-	}
-
-	// If this is a write operation, then we add an empty read concern so the
-	// following code can set "afterClusterTime". That avoids a data correctness
-	// problem that can happen when there is a network partition in a sharded
-	// cluster. See DRIVERS-3274 for more details.
-	if rc == nil && op.SendAfterClusterTime && client != nil &&
-		client.Consistent && client.OperationTime != nil && !client.TransactionRunning() {
 		rc = &readconcern.ReadConcern{}
 	}
 

@@ -92,21 +92,20 @@ func (dc *DropCollection) Execute(ctx context.Context) error {
 	}
 
 	return driver.Operation{
-		CommandFn:            dc.command,
-		ProcessResponseFn:    dc.processResponse,
-		Client:               dc.session,
-		Clock:                dc.clock,
-		CommandMonitor:       dc.monitor,
-		Crypt:                dc.crypt,
-		Database:             dc.database,
-		Deployment:           dc.deployment,
-		Selector:             dc.selector,
-		WriteConcern:         dc.writeConcern,
-		ServerAPI:            dc.serverAPI,
-		Timeout:              dc.timeout,
-		Name:                 driverutil.DropOp,
-		Authenticator:        dc.authenticator,
-		SendAfterClusterTime: true,
+		CommandFn:         dc.command,
+		ProcessResponseFn: dc.processResponse,
+		Client:            dc.session,
+		Clock:             dc.clock,
+		CommandMonitor:    dc.monitor,
+		Crypt:             dc.crypt,
+		Database:          dc.database,
+		Deployment:        dc.deployment,
+		Selector:          dc.selector,
+		WriteConcern:      dc.writeConcern,
+		ServerAPI:         dc.serverAPI,
+		Timeout:           dc.timeout,
+		Name:              driverutil.DropOp,
+		Authenticator:     dc.authenticator,
 	}.Execute(ctx)
 }
 

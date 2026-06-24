@@ -15,9 +15,6 @@ import (
 )
 
 // Server is an open session with the server.
-//
-// Deprecated: For internal use only, do not use. May be changed or removed in
-// any release.
 type Server struct {
 	SessionID bsoncore.Document
 	TxnNumber int64

@@ -68,19 +68,18 @@ func (c *Create) Execute(ctx context.Context) error {
 	}
 
 	return driver.Operation{
-		CommandFn:            c.command,
-		ProcessResponseFn:    c.processResponse,
-		Client:               c.session,
-		Clock:                c.clock,
-		CommandMonitor:       c.monitor,
-		Crypt:                c.crypt,
-		Database:             c.database,
-		Deployment:           c.deployment,
-		Selector:             c.selector,
-		WriteConcern:         c.writeConcern,
-		ServerAPI:            c.serverAPI,
-		Authenticator:        c.authenticator,
-		SendAfterClusterTime: true,
+		CommandFn:         c.command,
+		ProcessResponseFn: c.processResponse,
+		Client:            c.session,
+		Clock:             c.clock,
+		CommandMonitor:    c.monitor,
+		Crypt:             c.crypt,
+		Database:          c.database,
+		Deployment:        c.deployment,
+		Selector:          c.selector,
+		WriteConcern:      c.writeConcern,
+		ServerAPI:         c.serverAPI,
+		Authenticator:     c.authenticator,
 	}.Execute(ctx)
 }
 

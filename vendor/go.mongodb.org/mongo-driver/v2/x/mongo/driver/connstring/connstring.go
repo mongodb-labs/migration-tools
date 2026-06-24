@@ -148,10 +148,6 @@ type ConnString struct {
 	RetryWritesSet                     bool
 	RetryReads                         bool
 	RetryReadsSet                      bool
-	MaxAdaptiveRetries                 uint
-	MaxAdaptiveRetriesSet              bool
-	EnableOverloadRetargeting          bool
-	EnableOverloadRetargetingSet       bool
 	MaxStaleness                       time.Duration
 	MaxStalenessSet                    bool
 	ReplicaSet                         string
@@ -528,23 +524,6 @@ func (u *ConnString) addOptions(connectionArgPairs []string) error {
 			}
 
 			u.RetryReadsSet = true
-		case "maxadaptiveretries":
-			n, err := strconv.Atoi(value)
-			if err != nil || n < 0 {
-				return fmt.Errorf("invalid value for %q: %q", key, value)
-			}
-			u.MaxAdaptiveRetries = uint(n)
-			u.MaxAdaptiveRetriesSet = true
-		case "enableoverloadretargeting":
-			switch value {
-			case "true":
-				u.EnableOverloadRetargeting = true
-			case "false":
-				u.EnableOverloadRetargeting = false
-			default:
-				return fmt.Errorf("invalid value for %q: %q", key, value)
-			}
-			u.EnableOverloadRetargetingSet = true
 		case "servermonitoringmode":
 			if !IsValidServerMonitoringMode(value) {
 				return fmt.Errorf("invalid value for %q: %q", key, value)

@@ -11,7 +11,4 @@
 //
 // WARNING: THIS PACKAGE IS EXPERIMENTAL AND MAY BE MODIFIED OR REMOVED WITHOUT
 // NOTICE! USE WITH EXTREME CAUTION!
-//
-// Deprecated: Package session is for internal use only and should not be used.
-// It may be changed or removed in any release.
 package session
