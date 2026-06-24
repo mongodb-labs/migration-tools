@@ -78,6 +78,16 @@ type eventsBatch struct {
 	ClusterTime   bson.Raw
 }
 
+type threadConfig struct {
+	watcher   Watcher
+	threadNum int
+	pipeline  mongo.Pipeline
+	csOpts    options.Lister[options.ChangeStreamOptions]
+	client    *mongo.Client
+	curChan   chan<- eventsBatch
+	setErr    func(error)
+}
+
 // NewParallel creates a new ParallelChangeStream.
 func NewParallel(
 	ctxIn context.Context,
@@ -154,11 +164,15 @@ func NewParallel(
 	for threadNum := range opts.Streams {
 		curChan := make(chan eventsBatch, 10)
 		channels[threadNum] = curChan
-		go runChangeStreamThread(
-			ctx, watcher, threadNum,
-			createPipeline(threadNum), opts.Options,
-			client, curChan, setErr,
-		)
+		go runChangeStreamThread(ctx, threadConfig{
+			watcher:   watcher,
+			threadNum: threadNum,
+			pipeline:  createPipeline(threadNum),
+			csOpts:    opts.Options,
+			client:    client,
+			curChan:   curChan,
+			setErr:    setErr,
+		})
 	}
 
 	return &ParallelChangeStream{
@@ -169,33 +183,25 @@ func NewParallel(
 	}, nil
 }
 
-func runChangeStreamThread(
-	ctx context.Context,
-	watcher Watcher,
-	threadNum int,
-	pipeline mongo.Pipeline,
-	csOpts options.Lister[options.ChangeStreamOptions],
-	client *mongo.Client,
-	curChan chan<- eventsBatch,
-	setErr func(error),
-) {
-	defer close(curChan)
+func runChangeStreamThread(ctx context.Context, cfg threadConfig) {
+	defer close(cfg.curChan)
 
+	csOpts := cfg.csOpts
 	if csOpts == nil {
 		csOpts = options.ChangeStream()
 	}
 
-	sess, err := client.StartSession(options.Session().SetCausalConsistency(true))
+	sess, err := cfg.client.StartSession(options.Session().SetCausalConsistency(true))
 	if err != nil {
-		setErr(fmt.Errorf("start session for thread %d: %w", threadNum, err))
+		cfg.setErr(fmt.Errorf("start session for thread %d: %w", cfg.threadNum, err))
 		return
 	}
 	sctx := mongo.NewSessionContext(ctx, sess)
 	defer sess.EndSession(sctx)
 
-	cs, err := watcher.Watch(sctx, pipeline, csOpts)
+	cs, err := cfg.watcher.Watch(sctx, cfg.pipeline, csOpts)
 	if err != nil {
-		setErr(fmt.Errorf("watch change stream for thread %d: %w", threadNum, err))
+		cfg.setErr(fmt.Errorf("watch change stream for thread %d: %w", cfg.threadNum, err))
 		return
 	}
 	defer cs.Close(sctx)
@@ -204,15 +210,15 @@ func runChangeStreamThread(
 	for {
 		if !cs.TryNext(sctx) {
 			if err := cs.Err(); err != nil {
-				setErr(fmt.Errorf("change stream error for thread %d: %w", threadNum, err))
+				cfg.setErr(fmt.Errorf("change stream error for thread %d: %w", cfg.threadNum, err))
 				return
 			}
 
 			select {
 			case <-sctx.Done():
-				setErr(sctx.Err())
+				cfg.setErr(sctx.Err())
 				return
-			case curChan <- eventsBatch{
+			case cfg.curChan <- eventsBatch{
 				OperationTime: *sess.OperationTime(),
 				ClusterTime:   sess.ClusterTime(),
 			}:
@@ -226,9 +232,9 @@ func runChangeStreamThread(
 		if cs.RemainingBatchLength() == 0 {
 			select {
 			case <-sctx.Done():
-				setErr(sctx.Err())
+				cfg.setErr(sctx.Err())
 				return
-			case curChan <- eventsBatch{
+			case cfg.curChan <- eventsBatch{
 				Events:        slices.Clone(events),
 				OperationTime: *sess.OperationTime(),
 				ClusterTime:   sess.ClusterTime(),

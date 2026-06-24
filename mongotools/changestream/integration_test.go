@@ -19,6 +19,35 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
+const (
+	testCollName        = "docs"
+	testRenamedCollName = "docs_renamed"
+	testSentinelColl    = "sentinel"
+)
+
+func doTestOperations(
+	ctx context.Context,
+	t *testing.T,
+	client *mongo.Client,
+	db *mongo.Database,
+	dbName string,
+) {
+	t.Helper()
+
+	coll := db.Collection(testCollName)
+	require.NoError(t, db.CreateCollection(ctx, testCollName))
+	generateRandomEvents(ctx, t, coll)
+
+	require.NoError(t, client.Database("admin").RunCommand(ctx, bson.D{
+		{"renameCollection", dbName + "." + testCollName},
+		{"to", dbName + "." + testRenamedCollName},
+	}).Err())
+	require.NoError(t, db.Collection(testRenamedCollName).Drop(ctx))
+
+	_, err := db.Collection(testSentinelColl).InsertOne(ctx, bson.D{{"sentinel", true}})
+	require.NoError(t, err)
+}
+
 func TestIntegration_EventOrdering(t *testing.T) {
 	legacytools.SetDriverCompatibility("4.0")
 
@@ -87,35 +116,10 @@ func TestIntegration_EventOrdering(t *testing.T) {
 		csOpts.SetShowExpandedEvents(true)
 	}
 
-	const (
-		collName        = "docs"
-		renamedCollName = "docs_renamed"
-		sentinelColl    = "sentinel"
-	)
-
-	coll := db.Collection(collName)
-
-	// create
-	require.NoError(t, db.CreateCollection(ctx, collName))
-
-	generateRandomEvents(ctx, t, coll)
-
-	// rename (admin command; works for unsharded collections)
-	require.NoError(t, client.Database("admin").RunCommand(ctx, bson.D{
-		{"renameCollection", dbName + "." + collName},
-		{"to", dbName + "." + renamedCollName},
-	}).Err())
-
-	// drop
-	require.NoError(t, db.Collection(renamedCollName).Drop(ctx))
-
-	// Sentinel insert: a distinct collection name makes it easy to detect in
-	// both streams without inspecting document contents.
-	_, err = db.Collection(sentinelColl).InsertOne(ctx, bson.D{{"sentinel", true}})
-	require.NoError(t, err)
+	doTestOperations(ctx, t, client, db, dbName)
 
 	isSentinel := func(event bson.Raw) bool {
-		return event.Lookup("ns", "coll").StringValue() == sentinelColl
+		return event.Lookup("ns", "coll").StringValue() == testSentinelColl
 	}
 
 	// Collect from a plain database-level watch (same scope and options as the
