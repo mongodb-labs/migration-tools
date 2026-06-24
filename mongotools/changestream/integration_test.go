@@ -22,6 +22,10 @@ import (
 func TestIntegration_EventOrdering(t *testing.T) {
 	legacytools.SetDriverCompatibility("4.0")
 
+	if internal.GetDBVersion(t) < "4.4" {
+		t.Skip("skipping test: requires MongoDB 4.4+")
+	}
+
 	ctx := t.Context()
 
 	uri := internal.GetConnStr(t)
