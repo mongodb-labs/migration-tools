@@ -35,3 +35,10 @@ Some things should _not_ be in this library because upstream tooling already pro
   [github.com/ccoveille/go-safecast/v2](https://pkg.go.dev/github.com/ccoveille/go-safecast/v2)
   instead
 - sets; use [golang-set](https://pkg.go.dev/github.com/deckarep/golang-set/v2) instead
+
+## Tests
+
+Unit tests are written in the usual Go way.
+
+Integration tests MUST include the word `Integration` in the test’s name. Call
+`internal.GetConnStr()` to fetch the connection string for use in your tests.
