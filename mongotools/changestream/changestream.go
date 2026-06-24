@@ -230,6 +230,8 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 
 	chansWithEvents := make([]int, 0, len(pcs.channels))
 
+	sess := mongo.SessionFromContext(ctx)
+
 	for i, batch := range pcs.curChanBatch {
 		for len(batch.Events) == 0 {
 			var ok bool
@@ -244,6 +246,11 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 					pcs.nextErr = fmt.Errorf("channel %d closed unexpectedly", i)
 					pcs.canceler(pcs.nextErr)
 					return false
+				}
+
+				if sess != nil {
+					sess.AdvanceOperationTime(&batch.OperationTime)
+					sess.AdvanceClusterTime(batch.ClusterTime)
 				}
 
 				pcs.curChanBatch[i] = batch
@@ -305,11 +312,6 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 		pcs.nextErr = fmt.Errorf("remove token key string field from change event for thread %d: %w", nextChan, err)
 		pcs.canceler(pcs.nextErr)
 		return false
-	}
-
-	if sess := mongo.SessionFromContext(ctx); sess != nil {
-		sess.AdvanceOperationTime(&pcs.curChanBatch[nextChan].OperationTime)
-		sess.AdvanceClusterTime(pcs.curChanBatch[nextChan].ClusterTime)
 	}
 
 	pcs.curChanBatch[nextChan].Events = pcs.curChanBatch[nextChan].Events[1:]
