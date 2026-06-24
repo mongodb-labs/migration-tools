@@ -218,7 +218,17 @@ type ParallelChangeStream struct {
 }
 
 func (pcs *ParallelChangeStream) Next(ctx context.Context) bool {
+	return pcs.next(ctx, true)
+}
+
+func (pcs *ParallelChangeStream) TryNext(ctx context.Context) bool {
+	return pcs.next(ctx, false)
+}
+
+func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 	chanToken := make([][]byte, len(pcs.channels))
+
+	chansWithEvents := make([]int, 0, len(pcs.channels))
 
 	for i, batch := range pcs.curChanBatch {
 		for len(batch.Events) == 0 {
@@ -238,7 +248,24 @@ func (pcs *ParallelChangeStream) Next(ctx context.Context) bool {
 
 				pcs.curChanBatch[i] = batch
 			}
+
+			if !blocking && len(batch.Events) == 0 {
+				// We got an empty batch, so we know this reader has no events.
+				// Thus we continue.
+				break
+			}
 		}
+
+		if len(batch.Events) == 0 {
+			if blocking {
+				panic("blocking but no events available")
+			}
+
+			// This reader has no events, so we continue.
+			continue
+		}
+
+		chansWithEvents = append(chansWithEvents, i)
 
 		token, err := bsontools.RawLookup[bson.Binary](batch.Events[0], tokenKeyStringField)
 		if err != nil {
@@ -250,8 +277,16 @@ func (pcs *ParallelChangeStream) Next(ctx context.Context) bool {
 		chanToken[i] = token.Data
 	}
 
+	if len(chansWithEvents) == 0 {
+		if blocking {
+			panic("blocking but no events available")
+		}
+
+		return false
+	}
+
 	nextChan := lo.MinBy(
-		lo.Range(len(chanToken)),
+		chansWithEvents,
 		func(i, j int) bool {
 			return bytes.Compare(chanToken[i], chanToken[j]) < 0
 		},
