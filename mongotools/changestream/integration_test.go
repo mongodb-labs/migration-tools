@@ -61,11 +61,16 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	tctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	csOpts := options.ChangeStream().
+		SetStartAtOperationTime(startTime)
+
+	if supportsExpandedEvents {
+		csOpts.SetShowExpandedEvents(true)
+	}
+
 	pcs, err := NewParallel(tctx, db, Options{
 		Streams: 1,
-		Options: options.ChangeStream().
-			SetStartAtOperationTime(startTime).
-			SetShowExpandedEvents(supportsExpandedEvents),
+		Options: csOpts,
 	})
 	require.NoError(t, err)
 	defer pcs.Close()
