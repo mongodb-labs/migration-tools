@@ -40,7 +40,7 @@ jobs:
             ${{ matrix.mongo_version }} \
             ${{ matrix.topology.args }}
 
-      - name: Wait for cluster readiness
+      - name: Await cluster readiness
         run: |
           for i in $(seq 1 120); do
             if docker exec mongo test -f /ready; then
