@@ -307,7 +307,12 @@ func (pcs *ParallelChangeStream) advanceSession(sess *mongo.Session, batch event
 	return true
 }
 
-func (pcs *ParallelChangeStream) fillBatch(ctx context.Context, i int, blocking bool, sess *mongo.Session) bool {
+func (pcs *ParallelChangeStream) fillBatch(
+	ctx context.Context,
+	i int,
+	blocking bool,
+	sess *mongo.Session,
+) bool {
 	for len(pcs.curChanBatch[i].Events) == 0 {
 		select {
 		case <-ctx.Done():
@@ -373,7 +378,10 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 			}
 			continue
 		}
-		token, err := bsontools.RawLookup[bson.Binary](pcs.curChanBatch[i].Events[0], tokenKeyStringField)
+		token, err := bsontools.RawLookup[bson.Binary](
+			pcs.curChanBatch[i].Events[0],
+			tokenKeyStringField,
+		)
 		if err != nil {
 			pcs.nextErr = fmt.Errorf("lookup event token for thread %d: %w", i, err)
 			pcs.canceler(pcs.nextErr)
