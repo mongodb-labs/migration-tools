@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"math/rand/v2"
+	"slices"
+
 	"github.com/mongodb-labs/migration-tools/internal"
 	"github.com/mongodb-labs/migration-tools/legacytools"
 	"github.com/stretchr/testify/require"
@@ -60,7 +63,8 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	defer cancel()
 
 	csOpts := options.ChangeStream().
-		SetStartAtOperationTime(startTime)
+		SetStartAtOperationTime(startTime).
+		SetBatchSize(10)
 
 	if supportsExpandedEvents {
 		csOpts.SetShowExpandedEvents(true)
@@ -77,31 +81,7 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	// create
 	require.NoError(t, db.CreateCollection(ctx, collName))
 
-	// insert x2
-	insertRes, err := coll.InsertMany(ctx, []any{
-		bson.D{{"x", 1}},
-		bson.D{{"x", 2}},
-	})
-	require.NoError(t, err)
-	id1, id2 := insertRes.InsertedIDs[0], insertRes.InsertedIDs[1]
-
-	// update
-	_, err = coll.UpdateOne(ctx,
-		bson.D{{"_id", id1}},
-		bson.D{{"$set", bson.D{{"x", 10}}}},
-	)
-	require.NoError(t, err)
-
-	// replace
-	_, err = coll.ReplaceOne(ctx,
-		bson.D{{"_id", id2}},
-		bson.D{{"x", 20}},
-	)
-	require.NoError(t, err)
-
-	// delete
-	_, err = coll.DeleteOne(ctx, bson.D{{"_id", id1}})
-	require.NoError(t, err)
+	generateRandomEvents(t, ctx, coll)
 
 	// rename (admin command; works for unsharded collections)
 	require.NoError(t, client.Database("admin").RunCommand(ctx, bson.D{
@@ -145,6 +125,50 @@ func TestIntegration_EventOrdering(t *testing.T) {
 		pcsEvents,
 		"parallel change stream’s events must match plain change stream’s",
 	)
+}
+
+func generateRandomEvents(t *testing.T, ctx context.Context, coll *mongo.Collection) {
+	t.Helper()
+
+	const total = 1_000
+	var liveIDs []any
+
+	for range total {
+		canMutate := len(liveIDs) > 0
+
+		var op int
+		if !canMutate {
+			op = 0
+		} else {
+			op = rand.IntN(4) // 0=insert 1=update 2=replace 3=delete
+		}
+
+		switch op {
+		case 0:
+			res, err := coll.InsertOne(ctx, bson.D{{"v", rand.Int64()}})
+			require.NoError(t, err)
+			liveIDs = append(liveIDs, res.InsertedID)
+		case 1:
+			id := liveIDs[rand.IntN(len(liveIDs))]
+			_, err := coll.UpdateOne(ctx,
+				bson.D{{"_id", id}},
+				bson.D{{"$set", bson.D{{"v", rand.Int64()}}}},
+			)
+			require.NoError(t, err)
+		case 2:
+			id := liveIDs[rand.IntN(len(liveIDs))]
+			_, err := coll.ReplaceOne(ctx,
+				bson.D{{"_id", id}},
+				bson.D{{"v", rand.Int64()}},
+			)
+			require.NoError(t, err)
+		case 3:
+			idx := rand.IntN(len(liveIDs))
+			_, err := coll.DeleteOne(ctx, bson.D{{"_id", liveIDs[idx]}})
+			require.NoError(t, err)
+			liveIDs = slices.Delete(liveIDs, idx, idx+1)
+		}
+	}
 }
 
 func drainChangeStream(t *testing.T, ctx context.Context, cs *mongo.ChangeStream, until func(bson.Raw) bool) []bson.Raw {
