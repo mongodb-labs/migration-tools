@@ -8,10 +8,8 @@ import (
 	"testing"
 	"time"
 
-	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/mongodb-labs/migration-tools/internal"
 	"github.com/mongodb-labs/migration-tools/legacytools"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -68,16 +66,10 @@ func TestIntegration_EventOrdering(t *testing.T) {
 		csOpts.SetShowExpandedEvents(true)
 	}
 
-	pcs, err := NewParallel(tctx, db, Options{
-		Streams: 1,
-		Options: csOpts,
-	})
-	require.NoError(t, err)
-	defer pcs.Close()
-
 	const (
 		collName        = "docs"
 		renamedCollName = "docs_renamed"
+		sentinelColl    = "sentinel"
 	)
 
 	coll := db.Collection(collName)
@@ -120,22 +112,72 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	// drop
 	require.NoError(t, db.Collection(renamedCollName).Drop(ctx))
 
-	expandedEventTypes := mapset.NewSet("create", "rename")
+	// Sentinel insert: a distinct collection name makes it easy to detect in
+	// both streams without inspecting document contents.
+	_, err = db.Collection(sentinelColl).InsertOne(ctx, bson.D{{"sentinel", true}})
+	require.NoError(t, err)
 
-	// Build the expected event-type sequence.
-	expected := []string{"create", "insert", "insert", "update", "replace", "delete", "rename", "drop"}
-	if !supportsExpandedEvents {
-		expected = lo.Filter(expected, func(opType string, _ int) bool {
-			return !expandedEventTypes.Contains(opType)
-		})
+	isSentinel := func(event bson.Raw) bool {
+		return event.Lookup("ns", "coll").StringValue() == sentinelColl
 	}
 
-	got := make([]string, 0, len(expected))
-	for len(got) < len(expected) {
-		require.True(t, pcs.Next(tctx), "change stream stopped early: %v", pcs.Err())
-		got = append(got, pcs.Current().Lookup("operationType").StringValue())
-	}
+	// Collect from a plain database-level watch (same scope and options as the
+	// parallel stream).
+	plainCS, err := db.Watch(tctx, mongo.Pipeline{}, csOpts)
+	require.NoError(t, err)
+	plainEvents := drainChangeStream(t, tctx, plainCS, isSentinel)
 
+	t.Logf("Plain change stream captured %d events", len(plainEvents))
+
+	pcs, err := NewParallel(tctx, db, Options{
+		Streams: 1,
+		Options: csOpts,
+	})
+	require.NoError(t, err)
+	defer pcs.Close()
+
+	// Collect from the parallel change stream.
+	pcsEvents := drainParallelChangeStream(t, tctx, pcs, isSentinel)
+
+	require.Equal(
+		t,
+		plainEvents,
+		pcsEvents,
+		"parallel change stream’s events must match plain change stream’s",
+	)
+}
+
+func drainChangeStream(t *testing.T, ctx context.Context, cs *mongo.ChangeStream, until func(bson.Raw) bool) []bson.Raw {
+	t.Helper()
+	defer cs.Close(ctx)
+
+	var events []bson.Raw
+	found := false
+	for cs.Next(ctx) {
+		events = append(events, cs.Current)
+		if until(cs.Current) {
+			found = true
+			break
+		}
+	}
+	require.NoError(t, cs.Err())
+	require.True(t, found, "sentinel event not seen in plain change stream")
+	return events
+}
+
+func drainParallelChangeStream(t *testing.T, ctx context.Context, pcs *ParallelChangeStream, until func(bson.Raw) bool) []bson.Raw {
+	t.Helper()
+
+	var events []bson.Raw
+	found := false
+	for pcs.Next(ctx) {
+		events = append(events, pcs.Current())
+		if until(pcs.Current()) {
+			found = true
+			break
+		}
+	}
 	require.NoError(t, pcs.Err())
-	require.Equal(t, expected, got)
+	require.True(t, found, "sentinel event not seen in parallel change stream")
+	return events
 }
