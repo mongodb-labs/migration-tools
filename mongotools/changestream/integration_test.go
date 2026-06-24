@@ -38,7 +38,10 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	// Detect server version to know whether "create" change events are emitted
 	// (MongoDB 6.0+).
 	var buildInfo bson.M
-	require.NoError(t, client.Database("admin").RunCommand(ctx, bson.D{{"buildInfo", 1}}).Decode(&buildInfo))
+	require.NoError(
+		t,
+		client.Database("admin").RunCommand(ctx, bson.D{{"buildInfo", 1}}).Decode(&buildInfo),
+	)
 	serverVersion := buildInfo["version"].(string)
 	majorVersion, _ := strconv.Atoi(strings.SplitN(serverVersion, ".", 2)[0])
 	supportsExpandedEvents := majorVersion >= 6
@@ -171,7 +174,12 @@ func generateRandomEvents(t *testing.T, ctx context.Context, coll *mongo.Collect
 	}
 }
 
-func drainChangeStream(t *testing.T, ctx context.Context, cs *mongo.ChangeStream, until func(bson.Raw) bool) []bson.Raw {
+func drainChangeStream(
+	t *testing.T,
+	ctx context.Context,
+	cs *mongo.ChangeStream,
+	until func(bson.Raw) bool,
+) []bson.Raw {
 	t.Helper()
 	defer cs.Close(ctx)
 
@@ -189,7 +197,12 @@ func drainChangeStream(t *testing.T, ctx context.Context, cs *mongo.ChangeStream
 	return events
 }
 
-func drainParallelChangeStream(t *testing.T, ctx context.Context, pcs *ParallelChangeStream, until func(bson.Raw) bool) []bson.Raw {
+func drainParallelChangeStream(
+	t *testing.T,
+	ctx context.Context,
+	pcs *ParallelChangeStream,
+	until func(bson.Raw) bool,
+) []bson.Raw {
 	t.Helper()
 
 	var events []bson.Raw

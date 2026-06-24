@@ -372,7 +372,11 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 		panic("no token key string field in change event??")
 	}
 	if err != nil {
-		pcs.nextErr = fmt.Errorf("remove token key string field from change event for thread %d: %w", nextChan, err)
+		pcs.nextErr = fmt.Errorf(
+			"remove token key string field from change event for thread %d: %w",
+			nextChan,
+			err,
+		)
 		pcs.canceler(pcs.nextErr)
 		return false
 	}
