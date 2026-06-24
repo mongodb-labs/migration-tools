@@ -1,3 +1,4 @@
+// Package changestream provides a parallel change stream implementation.
 package changestream
 
 import (
@@ -23,7 +24,7 @@ const (
 )
 
 var (
-	closeCalledErr = fmt.Errorf("close called on ParallelChangeStream")
+	errCloseCalled = fmt.Errorf("close called on ParallelChangeStream")
 )
 
 // ParallelChangeStream runs multiple change streams in parallel and merges
@@ -87,10 +88,7 @@ func NewParallel(
 		return nil, fmt.Errorf("streams (%d) must be positive", opts.Streams)
 	}
 
-	dispatchInput := cmp.Or(
-		opts.DispatchRef,
-		"$_id",
-	)
+	dispatchInput := cmp.Or(opts.DispatchRef, "$_id")
 
 	createPipeline := func(threadNum int) mongo.Pipeline {
 		return lo.Concat(
@@ -139,11 +137,9 @@ func NewParallel(
 	}
 
 	channels := make([]chan eventsBatch, opts.Streams)
-
 	ctx, canceler := contextplus.WithCancelCause(ctxIn)
 
 	var client *mongo.Client
-
 	switch w := watcher.(type) {
 	case collLike:
 		client = w.Database().Client()
@@ -158,73 +154,11 @@ func NewParallel(
 	for threadNum := range opts.Streams {
 		curChan := make(chan eventsBatch, 10)
 		channels[threadNum] = curChan
-
-		go func(threadNum int) {
-			defer close(curChan)
-
-			pl := createPipeline(threadNum)
-
-			csOpts := opts.Options
-			if csOpts == nil {
-				csOpts = options.ChangeStream()
-			}
-
-			sess, err := client.StartSession(options.Session().SetCausalConsistency(true))
-			if err != nil {
-				setErr(fmt.Errorf("start session for thread %d: %w", threadNum, err))
-				return
-			}
-			sctx := mongo.NewSessionContext(ctx, sess)
-			defer sess.EndSession(sctx)
-
-			cs, err := watcher.Watch(sctx, pl, csOpts)
-			if err != nil {
-				setErr(fmt.Errorf("watch change stream for thread %d: %w", threadNum, err))
-				return
-			}
-
-			defer cs.Close(sctx)
-
-			var events []bson.Raw
-			for {
-				if !cs.TryNext(sctx) {
-					if err := cs.Err(); err != nil {
-						setErr(fmt.Errorf("change stream error for thread %d: %w", threadNum, err))
-						return
-					}
-
-					select {
-					case <-sctx.Done():
-						setErr(sctx.Err())
-						return
-					case curChan <- eventsBatch{
-						OperationTime: *sess.OperationTime(),
-						ClusterTime:   sess.ClusterTime(),
-					}:
-					}
-
-					continue
-				}
-
-				events = append(events, cs.Current)
-
-				if cs.RemainingBatchLength() == 0 {
-					select {
-					case <-sctx.Done():
-						setErr(sctx.Err())
-						return
-					case curChan <- eventsBatch{
-						Events:        slices.Clone(events),
-						OperationTime: *sess.OperationTime(),
-						ClusterTime:   sess.ClusterTime(),
-					}:
-					}
-
-					clear(events)
-					events = events[:0]
-				}
-			}
-		}(threadNum)
+		go runChangeStreamThread(
+			ctx, watcher, threadNum,
+			createPipeline(threadNum), opts.Options,
+			client, curChan, setErr,
+		)
 	}
 
 	return &ParallelChangeStream{
@@ -233,6 +167,78 @@ func NewParallel(
 		errFuture:    errFuture,
 		canceler:     canceler,
 	}, nil
+}
+
+func runChangeStreamThread(
+	ctx context.Context,
+	watcher Watcher,
+	threadNum int,
+	pipeline mongo.Pipeline,
+	csOpts options.Lister[options.ChangeStreamOptions],
+	client *mongo.Client,
+	curChan chan<- eventsBatch,
+	setErr func(error),
+) {
+	defer close(curChan)
+
+	if csOpts == nil {
+		csOpts = options.ChangeStream()
+	}
+
+	sess, err := client.StartSession(options.Session().SetCausalConsistency(true))
+	if err != nil {
+		setErr(fmt.Errorf("start session for thread %d: %w", threadNum, err))
+		return
+	}
+	sctx := mongo.NewSessionContext(ctx, sess)
+	defer sess.EndSession(sctx)
+
+	cs, err := watcher.Watch(sctx, pipeline, csOpts)
+	if err != nil {
+		setErr(fmt.Errorf("watch change stream for thread %d: %w", threadNum, err))
+		return
+	}
+	defer cs.Close(sctx)
+
+	var events []bson.Raw
+	for {
+		if !cs.TryNext(sctx) {
+			if err := cs.Err(); err != nil {
+				setErr(fmt.Errorf("change stream error for thread %d: %w", threadNum, err))
+				return
+			}
+
+			select {
+			case <-sctx.Done():
+				setErr(sctx.Err())
+				return
+			case curChan <- eventsBatch{
+				OperationTime: *sess.OperationTime(),
+				ClusterTime:   sess.ClusterTime(),
+			}:
+			}
+
+			continue
+		}
+
+		events = append(events, cs.Current)
+
+		if cs.RemainingBatchLength() == 0 {
+			select {
+			case <-sctx.Done():
+				setErr(sctx.Err())
+				return
+			case curChan <- eventsBatch{
+				Events:        slices.Clone(events),
+				OperationTime: *sess.OperationTime(),
+				ClusterTime:   sess.ClusterTime(),
+			}:
+			}
+
+			clear(events)
+			events = events[:0]
+		}
+	}
 }
 
 // Next iterates the change stream. It blocks until the next change event is
@@ -255,23 +261,20 @@ func (pcs *ParallelChangeStream) Current() bson.Raw {
 
 // Close closes the change stream. It is safe to call Close multiple times.
 func (pcs *ParallelChangeStream) Close() {
-	pcs.canceler(closeCalledErr)
+	pcs.canceler(errCloseCalled)
 }
 
 // Err returns whatever error, if any, happened while iterating the change
 // stream. This may include errors from the underlying streams or from the
-// “top-level” stream (or both).
+// "top-level" stream (or both).
 func (pcs *ParallelChangeStream) Err() error {
 	nextErr := pcs.nextErr
 
 	var threadErr error
-
 	select {
 	case <-pcs.errFuture.Ready():
 		threadErr = pcs.errFuture.Get()
-
-		// Ignore the error if it was caused by Close() being called.
-		if errors.Is(threadErr, closeCalledErr) {
+		if errors.Is(threadErr, errCloseCalled) {
 			threadErr = nil
 		}
 	default:
@@ -281,90 +284,60 @@ func (pcs *ParallelChangeStream) Err() error {
 		if threadErr != nil {
 			return fmt.Errorf("thread error: %w; iteration error: %w", threadErr, nextErr)
 		}
-
 		return nextErr
 	}
 
 	return threadErr
 }
 
-func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
-	chanToken := make([][]byte, len(pcs.channels))
-
-	chansWithEvents := make([]int, 0, len(pcs.channels))
-
-	sess := mongo.SessionFromContext(ctx)
-
-	for i, batch := range pcs.curChanBatch {
-		for len(batch.Events) == 0 {
-			var ok bool
-
-			select {
-			case <-ctx.Done():
-				pcs.nextErr = ctx.Err()
-				pcs.canceler(pcs.nextErr)
-				return false
-			case batch, ok = <-pcs.channels[i]:
-				if !ok {
-					pcs.nextErr = fmt.Errorf("channel %d closed unexpectedly", i)
-					pcs.canceler(pcs.nextErr)
-					return false
-				}
-
-				if sess != nil {
-					sess.AdvanceOperationTime(&batch.OperationTime)
-					sess.AdvanceClusterTime(batch.ClusterTime)
-				}
-
-				pcs.curChanBatch[i] = batch
-			}
-
-			if !blocking && len(batch.Events) == 0 {
-				// We got an empty batch, so we know this reader has no events.
-				// Thus we continue.
-				break
-			}
-		}
-
-		if len(batch.Events) == 0 {
-			if blocking {
-				panic("blocking but no events available")
-			}
-
-			// This reader has no events, so we continue.
-			continue
-		}
-
-		chansWithEvents = append(chansWithEvents, i)
-
-		token, err := bsontools.RawLookup[bson.Binary](batch.Events[0], tokenKeyStringField)
-		if err != nil {
-			pcs.nextErr = fmt.Errorf("lookup event token for thread %d: %w", i, err)
-			pcs.canceler(pcs.nextErr)
-			return false
-		}
-
-		chanToken[i] = token.Data
+func (pcs *ParallelChangeStream) advanceSession(sess *mongo.Session, batch eventsBatch) bool {
+	if sess == nil {
+		return true
 	}
-
-	if len(chansWithEvents) == 0 {
-		if blocking {
-			panic("blocking but no events available")
-		}
-
+	if err := sess.AdvanceOperationTime(&batch.OperationTime); err != nil {
+		pcs.nextErr = err
+		pcs.canceler(err)
 		return false
 	}
+	if err := sess.AdvanceClusterTime(batch.ClusterTime); err != nil {
+		pcs.nextErr = err
+		pcs.canceler(err)
+		return false
+	}
+	return true
+}
 
-	nextChan := lo.MinBy(
-		chansWithEvents,
-		func(i, j int) bool {
-			return bytes.Compare(chanToken[i], chanToken[j]) < 0
-		},
-	)
+func (pcs *ParallelChangeStream) fillBatch(ctx context.Context, i int, blocking bool, sess *mongo.Session) bool {
+	for len(pcs.curChanBatch[i].Events) == 0 {
+		select {
+		case <-ctx.Done():
+			pcs.nextErr = ctx.Err()
+			pcs.canceler(pcs.nextErr)
+			return false
+		case batch, ok := <-pcs.channels[i]:
+			if !ok {
+				pcs.nextErr = fmt.Errorf("channel %d closed unexpectedly", i)
+				pcs.canceler(pcs.nextErr)
+				return false
+			}
+			if !pcs.advanceSession(sess, batch) {
+				return false
+			}
+			pcs.curChanBatch[i] = batch
+		}
+		if !blocking && len(pcs.curChanBatch[i].Events) == 0 {
+			break
+		}
+	}
+	return true
+}
 
-	var found bool
-	var err error
-	pcs.current, found, err = bsontools.RemoveFromRaw(
+func (pcs *ParallelChangeStream) pickAndConsume(chansWithEvents []int, chanToken [][]byte) bool {
+	nextChan := lo.MinBy(chansWithEvents, func(i, j int) bool {
+		return bytes.Compare(chanToken[i], chanToken[j]) < 0
+	})
+
+	current, found, err := bsontools.RemoveFromRaw(
 		pcs.curChanBatch[nextChan].Events[0],
 		tokenKeyStringField,
 	)
@@ -374,14 +347,48 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 	if err != nil {
 		pcs.nextErr = fmt.Errorf(
 			"remove token key string field from change event for thread %d: %w",
-			nextChan,
-			err,
+			nextChan, err,
 		)
 		pcs.canceler(pcs.nextErr)
 		return false
 	}
 
+	pcs.current = current
 	pcs.curChanBatch[nextChan].Events = pcs.curChanBatch[nextChan].Events[1:]
-
 	return true
+}
+
+func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
+	chanToken := make([][]byte, len(pcs.channels))
+	chansWithEvents := make([]int, 0, len(pcs.channels))
+	sess := mongo.SessionFromContext(ctx)
+
+	for i := range pcs.channels {
+		if !pcs.fillBatch(ctx, i, blocking, sess) {
+			return false
+		}
+		if len(pcs.curChanBatch[i].Events) == 0 {
+			if blocking {
+				panic("blocking but no events available")
+			}
+			continue
+		}
+		token, err := bsontools.RawLookup[bson.Binary](pcs.curChanBatch[i].Events[0], tokenKeyStringField)
+		if err != nil {
+			pcs.nextErr = fmt.Errorf("lookup event token for thread %d: %w", i, err)
+			pcs.canceler(pcs.nextErr)
+			return false
+		}
+		chanToken[i] = token.Data
+		chansWithEvents = append(chansWithEvents, i)
+	}
+
+	if len(chansWithEvents) == 0 {
+		if blocking {
+			panic("blocking but no events available")
+		}
+		return false
+	}
+
+	return pcs.pickAndConsume(chansWithEvents, chanToken)
 }

@@ -28,12 +28,20 @@ func TestIntegration_EventOrdering(t *testing.T) {
 
 	client, err := mongo.Connect(options.Client().ApplyURI(uri))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
+	t.Cleanup(func() {
+		if err := client.Disconnect(context.Background()); err != nil {
+			t.Logf("disconnect: %v", err)
+		}
+	})
 
 	// Unique DB name to avoid cross-test interference.
 	dbName := fmt.Sprintf("test_cs_%d", time.Now().UnixNano())
 	db := client.Database(dbName)
-	t.Cleanup(func() { _ = db.Drop(context.Background()) })
+	t.Cleanup(func() {
+		if err := db.Drop(context.Background()); err != nil {
+			t.Logf("drop test database: %v", err)
+		}
+	})
 
 	// Detect server version to know whether "create" change events are emitted
 	// (MongoDB 6.0+).
@@ -42,8 +50,10 @@ func TestIntegration_EventOrdering(t *testing.T) {
 		t,
 		client.Database("admin").RunCommand(ctx, bson.D{{"buildInfo", 1}}).Decode(&buildInfo),
 	)
-	serverVersion := buildInfo["version"].(string)
-	majorVersion, _ := strconv.Atoi(strings.SplitN(serverVersion, ".", 2)[0])
+	serverVersion, ok := buildInfo["version"].(string)
+	require.True(t, ok, "buildInfo.version is not a string")
+	majorVersion, err := strconv.Atoi(strings.SplitN(serverVersion, ".", 2)[0])
+	require.NoError(t, err)
 	supportsExpandedEvents := majorVersion >= 6
 
 	// Capture the cluster time now so that SetStartAtOperationTime can be used
@@ -84,7 +94,7 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	// create
 	require.NoError(t, db.CreateCollection(ctx, collName))
 
-	generateRandomEvents(t, ctx, coll)
+	generateRandomEvents(ctx, t, coll)
 
 	// rename (admin command; works for unsharded collections)
 	require.NoError(t, client.Database("admin").RunCommand(ctx, bson.D{
@@ -108,7 +118,7 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	// parallel stream).
 	plainCS, err := db.Watch(tctx, mongo.Pipeline{}, csOpts)
 	require.NoError(t, err)
-	plainEvents := drainChangeStream(t, tctx, plainCS, isSentinel)
+	plainEvents := drainChangeStream(tctx, t, plainCS, isSentinel)
 
 	t.Logf("Plain change stream captured %d events", len(plainEvents))
 
@@ -120,7 +130,7 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	defer pcs.Close()
 
 	// Collect from the parallel change stream.
-	pcsEvents := drainParallelChangeStream(t, tctx, pcs, isSentinel)
+	pcsEvents := drainParallelChangeStream(tctx, t, pcs, isSentinel)
 
 	require.Equal(
 		t,
@@ -130,7 +140,7 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	)
 }
 
-func generateRandomEvents(t *testing.T, ctx context.Context, coll *mongo.Collection) {
+func generateRandomEvents(ctx context.Context, t *testing.T, coll *mongo.Collection) {
 	t.Helper()
 
 	const total = 1_000
@@ -175,8 +185,8 @@ func generateRandomEvents(t *testing.T, ctx context.Context, coll *mongo.Collect
 }
 
 func drainChangeStream(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	cs *mongo.ChangeStream,
 	until func(bson.Raw) bool,
 ) []bson.Raw {
@@ -198,8 +208,8 @@ func drainChangeStream(
 }
 
 func drainParallelChangeStream(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	pcs *ParallelChangeStream,
 	until func(bson.Raw) bool,
 ) []bson.Raw {
