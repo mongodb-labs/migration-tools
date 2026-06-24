@@ -141,27 +141,28 @@ func NewParallel(
 				setErr(fmt.Errorf("start session for thread %d: %w", threadNum, err))
 				return
 			}
-			defer sess.EndSession(ctx)
+			sctx := mongo.NewSessionContext(ctx, sess)
+			defer sess.EndSession(sctx)
 
-			cs, err := watcher.Watch(ctx, pl, csOpts)
+			cs, err := watcher.Watch(sctx, pl, csOpts)
 			if err != nil {
 				setErr(fmt.Errorf("watch change stream for thread %d: %w", threadNum, err))
 				return
 			}
 
-			defer cs.Close(ctx)
+			defer cs.Close(sctx)
 
 			var events []bson.Raw
 			for {
-				if !cs.TryNext(ctx) {
+				if !cs.TryNext(sctx) {
 					if err := cs.Err(); err != nil {
 						setErr(fmt.Errorf("change stream error for thread %d: %w", threadNum, err))
 						return
 					}
 
 					select {
-					case <-ctx.Done():
-						setErr(ctx.Err())
+					case <-sctx.Done():
+						setErr(sctx.Err())
 						return
 					case curChan <- EventsBatch{
 						OperationTime: *sess.OperationTime(),
@@ -176,8 +177,8 @@ func NewParallel(
 
 				if cs.RemainingBatchLength() == 0 {
 					select {
-					case <-ctx.Done():
-						setErr(ctx.Err())
+					case <-sctx.Done():
+						setErr(sctx.Err())
 						return
 					case curChan <- EventsBatch{
 						Events:        slices.Clone(events),
