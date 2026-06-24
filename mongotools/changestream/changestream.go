@@ -100,44 +100,6 @@ func NewParallel(
 
 	dispatchInput := cmp.Or(opts.DispatchRef, "$_id")
 
-	createPipeline := func(threadNum int) mongo.Pipeline {
-		return lo.Concat(
-			mongo.Pipeline{
-				{
-					{"$match", bson.D{
-						{"$expr", bson.D{
-							{"$eq", bson.A{
-								threadNum,
-								bson.D{{"$abs", bson.D{
-									{"$mod", bson.A{
-										bson.D{{"$toHashedIndexKey", bson.D{
-											{"$_internalKeyStringValue", bson.D{
-												{"input", dispatchInput},
-											}},
-										}}},
-										opts.Streams,
-									}},
-								}}},
-							}},
-						}},
-					}},
-				},
-			},
-			opts.Pipeline,
-			mongo.Pipeline{
-				{
-					{"$addFields", bson.D{
-						{tokenKeyStringField, bson.D{
-							{"$_internalKeyStringValue", bson.D{
-								{"input", "$_id"},
-							}},
-						}},
-					}},
-				},
-			},
-		)
-	}
-
 	errFuture, errSetter := future.New[error]()
 	errIsSet := &atomic.Bool{}
 	setErr := func(err error) {
@@ -167,11 +129,16 @@ func NewParallel(
 		go runChangeStreamThread(ctx, threadConfig{
 			watcher:   watcher,
 			threadNum: threadNum,
-			pipeline:  createPipeline(threadNum),
-			csOpts:    opts.Options,
-			client:    client,
-			curChan:   curChan,
-			setErr:    setErr,
+			pipeline: createPipeline(
+				threadNum,
+				opts.Streams,
+				dispatchInput,
+				opts.Pipeline,
+			),
+			csOpts:  opts.Options,
+			client:  client,
+			curChan: curChan,
+			setErr:  setErr,
 		})
 	}
 
@@ -181,6 +148,49 @@ func NewParallel(
 		errFuture:    errFuture,
 		canceler:     canceler,
 	}, nil
+}
+
+func createPipeline(
+	threadNum int,
+	streams int,
+	dispatchInput string,
+	userPipeline mongo.Pipeline,
+) mongo.Pipeline {
+	return lo.Concat(
+		mongo.Pipeline{
+			{
+				{"$match", bson.D{
+					{"$expr", bson.D{
+						{"$eq", bson.A{
+							threadNum,
+							bson.D{{"$abs", bson.D{
+								{"$mod", bson.A{
+									bson.D{{"$toHashedIndexKey", bson.D{
+										{"$_internalKeyStringValue", bson.D{
+											{"input", dispatchInput},
+										}},
+									}}},
+									streams,
+								}},
+							}}},
+						}},
+					}},
+				}},
+			},
+		},
+		userPipeline,
+		mongo.Pipeline{
+			{
+				{"$addFields", bson.D{
+					{tokenKeyStringField, bson.D{
+						{"$_internalKeyStringValue", bson.D{
+							{"input", "$_id"},
+						}},
+					}},
+				}},
+			},
+		},
+	)
 }
 
 func runChangeStreamThread(ctx context.Context, cfg threadConfig) {
