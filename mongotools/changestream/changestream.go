@@ -58,7 +58,11 @@ func NewParallel(
 	ctxIn context.Context,
 	watcher Watcher,
 	opts Options,
-) *ParallelChangeStream {
+) (*ParallelChangeStream, error) {
+	if opts.Streams <= 0 {
+		return nil, fmt.Errorf("streams (%d) must be positive", opts.Streams)
+	}
+
 	createPipeline := func(threadNum int) mongo.Pipeline {
 		return lo.Concat(
 			mongo.Pipeline{
