@@ -193,6 +193,18 @@ func createPipeline(
 	)
 }
 
+// sendBatch sends a batch to the channel, or records an error if the context
+// is done first. Returns false when the thread should exit.
+func (cfg threadConfig) sendBatch(ctx context.Context, batch eventsBatch) bool {
+	select {
+	case <-ctx.Done():
+		cfg.setErr(ctx.Err())
+		return false
+	case cfg.curChan <- batch:
+		return true
+	}
+}
+
 func runChangeStreamThread(ctx context.Context, cfg threadConfig) {
 	defer close(cfg.curChan)
 
@@ -223,34 +235,25 @@ func runChangeStreamThread(ctx context.Context, cfg threadConfig) {
 				cfg.setErr(fmt.Errorf("change stream error for thread %d: %w", cfg.threadNum, err))
 				return
 			}
-
-			select {
-			case <-sctx.Done():
-				cfg.setErr(sctx.Err())
-				return
-			case cfg.curChan <- eventsBatch{
+			if !cfg.sendBatch(sctx, eventsBatch{
 				OperationTime: *sess.OperationTime(),
 				ClusterTime:   sess.ClusterTime(),
-			}:
+			}) {
+				return
 			}
-
 			continue
 		}
 
 		events = append(events, cs.Current)
 
 		if cs.RemainingBatchLength() == 0 {
-			select {
-			case <-sctx.Done():
-				cfg.setErr(sctx.Err())
-				return
-			case cfg.curChan <- eventsBatch{
+			if !cfg.sendBatch(sctx, eventsBatch{
 				Events:        slices.Clone(events),
 				OperationTime: *sess.OperationTime(),
 				ClusterTime:   sess.ClusterTime(),
-			}:
+			}) {
+				return
 			}
-
 			clear(events)
 			events = events[:0]
 		}
