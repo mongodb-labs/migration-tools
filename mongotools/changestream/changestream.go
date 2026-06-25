@@ -10,16 +10,13 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/mongodb-labs/migration-tools/bsontools"
 	"github.com/mongodb-labs/migration-tools/contextplus"
 	"github.com/mongodb-labs/migration-tools/future"
 	"github.com/samber/lo"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
-)
-
-const (
-	tokenKeyStringField = "__tokenKeyString"
 )
 
 var (
@@ -35,6 +32,7 @@ type ParallelChangeStream struct {
 	errFuture    *future.Future[error]
 	nextErr      error
 	current      bson.Raw
+	resumeToken  bson.Raw
 	canceler     context.CancelCauseFunc
 }
 
@@ -75,6 +73,7 @@ type eventsBatch struct {
 	Events        []bson.Raw
 	OperationTime bson.Timestamp
 	ClusterTime   bson.Raw
+	ResumeToken   bson.Raw
 }
 
 type threadConfig struct {
@@ -222,6 +221,7 @@ func runChangeStreamThread(ctx context.Context, cfg threadConfig) {
 			if !cfg.sendBatch(sctx, eventsBatch{
 				OperationTime: lo.FromPtr(sess.OperationTime()),
 				ClusterTime:   sess.ClusterTime(),
+				ResumeToken:   cs.ResumeToken(),
 			}) {
 				return
 			}
@@ -293,6 +293,10 @@ func (pcs *ParallelChangeStream) Err() error {
 	return threadErr
 }
 
+func (pcs *ParallelChangeStream) ResumeToken() bson.Raw {
+	return pcs.resumeToken
+}
+
 func (pcs *ParallelChangeStream) advanceSession(sess *mongo.Session, batch eventsBatch) bool {
 	if sess == nil {
 		return true
@@ -313,7 +317,6 @@ func (pcs *ParallelChangeStream) advanceSession(sess *mongo.Session, batch event
 func (pcs *ParallelChangeStream) fillBatch(
 	ctx context.Context,
 	i int,
-	blocking bool,
 	sess *mongo.Session,
 ) bool {
 	if len(pcs.curChanBatch[i].Events) == 0 {
@@ -335,21 +338,26 @@ func (pcs *ParallelChangeStream) fillBatch(
 
 			pcs.curChanBatch[i] = batch
 		}
-		if !blocking && len(pcs.curChanBatch[i].Events) == 0 {
-			return false
-		}
 	}
-	return true
+
+	return len(pcs.curChanBatch[i].Events) > 0
 }
 
-func (pcs *ParallelChangeStream) pickAndConsume(chansWithEvents []int, chanToken [][]byte) bool {
+func (pcs *ParallelChangeStream) pickAndConsume(chansWithEvents []int, chanToken [][]byte) error {
 	nextChan := lo.MinBy(chansWithEvents, func(i, j int) bool {
 		return bytes.Compare(chanToken[i], chanToken[j]) < 0
 	})
 
 	pcs.current = pcs.curChanBatch[nextChan].Events[0]
 	pcs.curChanBatch[nextChan].Events = pcs.curChanBatch[nextChan].Events[1:]
-	return true
+
+	var err error
+	pcs.resumeToken, err = bsontools.RawLookup[bson.Raw](pcs.current, "_id")
+	if err != nil {
+		return fmt.Errorf("lookup resume token for thread %d: %w", nextChan, err)
+	}
+
+	return nil
 }
 
 func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
@@ -357,41 +365,75 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 	chansWithEvents := make([]int, 0, len(pcs.channels))
 	sess := mongo.SessionFromContext(ctx)
 
-	for i := range pcs.channels {
-		if !pcs.fillBatch(ctx, i, blocking, sess) {
-			return false
-		}
-		if len(pcs.curChanBatch[i].Events) == 0 {
-			if blocking {
-				panic("blocking but no events available")
+	for len(chansWithEvents) == 0 {
+		for i := range pcs.channels {
+			if !pcs.fillBatch(ctx, i, sess) {
+				continue
 			}
-			continue
-		}
-		token, err := pcs.curChanBatch[i].Events[0].LookupErr(
-			"_id",
-			"_data",
-		)
-		if err != nil {
-			pcs.nextErr = fmt.Errorf("lookup resume token for thread %d: %w", i, err)
-			pcs.canceler(pcs.nextErr)
-			return false
-		}
-		if token.Type != bson.TypeString {
-			pcs.nextErr = fmt.Errorf("resume token for thread %d is %s not %s", i, token.Type, bson.TypeString)
-			pcs.canceler(pcs.nextErr)
-			return false
+
+			token, err := pcs.curChanBatch[i].Events[0].LookupErr(
+				"_id",
+				"_data",
+			)
+			if err != nil {
+				pcs.nextErr = fmt.Errorf("lookup resume token for thread %d: %w", i, err)
+				pcs.canceler(pcs.nextErr)
+				return false
+			}
+			if token.Type != bson.TypeString {
+				pcs.nextErr = fmt.Errorf("resume token for thread %d is %s not %s", i, token.Type, bson.TypeString)
+				pcs.canceler(pcs.nextErr)
+				return false
+			}
+
+			chanToken[i] = token.Value
+			chansWithEvents = append(chansWithEvents, i)
 		}
 
-		chanToken[i] = token.Value
-		chansWithEvents = append(chansWithEvents, i)
+		if !blocking && len(chansWithEvents) == 0 {
+			tokens := lo.Map(
+				pcs.curChanBatch,
+				func(batch eventsBatch, _ int) []byte {
+					return batch.ResumeToken
+				},
+			)
+
+			tokenData := make([]string, 0, len(tokens))
+
+			for _, token := range tokens {
+				tokenD, err := bsontools.RawLookup[string](
+					token,
+					"_id",
+					"_data",
+				)
+				if err != nil {
+					pcs.nextErr = fmt.Errorf("lookup resume token: %w", err)
+					pcs.canceler(pcs.nextErr)
+					return false
+				}
+
+				tokenData = append(tokenData, tokenD)
+			}
+
+			nextTokenIdx := lo.MinBy(
+				lo.Range(len(tokens)),
+				func(a, b int) bool {
+					return cmp.Compare(tokenData[a], tokenData[b]) < 0
+				},
+			)
+
+			pcs.resumeToken = tokens[nextTokenIdx]
+
+			return false
+		}
 	}
 
-	if len(chansWithEvents) == 0 {
-		if blocking {
-			panic("blocking but no events available")
-		}
+	err := pcs.pickAndConsume(chansWithEvents, chanToken)
+	if err != nil {
+		pcs.nextErr = err
+		pcs.canceler(pcs.nextErr)
 		return false
 	}
 
-	return pcs.pickAndConsume(chansWithEvents, chanToken)
+	return true
 }
