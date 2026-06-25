@@ -10,7 +10,6 @@ import (
 	"slices"
 	"sync/atomic"
 
-	"github.com/mongodb-labs/migration-tools/bsontools"
 	"github.com/mongodb-labs/migration-tools/contextplus"
 	"github.com/mongodb-labs/migration-tools/future"
 	"github.com/samber/lo"
@@ -49,7 +48,7 @@ type Options struct {
 
 	// DispatchRef identifies the field in the change event used to dispatch a
 	// given event to a stream. If not provided, the default is `$_id`.
-	DispatchRef string
+	DispatchRef any
 
 	// Options are the change stream options to use.
 	Options options.Lister[options.ChangeStreamOptions]
@@ -98,7 +97,7 @@ func NewParallel(
 		return nil, fmt.Errorf("streams (%d) must be positive", opts.Streams)
 	}
 
-	dispatchInput := cmp.Or(opts.DispatchRef, "$_id")
+	dispatchInput := cmp.Or(opts.DispatchRef, "$_id._data")
 
 	errFuture, errSetter := future.New[error]()
 	errIsSet := &atomic.Bool{}
@@ -153,7 +152,7 @@ func NewParallel(
 func createPipeline(
 	threadNum int,
 	streams int,
-	dispatchInput string,
+	dispatchInput any,
 	userPipeline mongo.Pipeline,
 ) mongo.Pipeline {
 	return lo.Concat(
@@ -165,11 +164,7 @@ func createPipeline(
 							threadNum,
 							bson.D{{"$abs", bson.D{
 								{"$mod", bson.A{
-									bson.D{{"$toHashedIndexKey", bson.D{
-										{"$_internalKeyStringValue", bson.D{
-											{"input", dispatchInput},
-										}},
-									}}},
+									bson.D{{"$toHashedIndexKey", dispatchInput}},
 									streams,
 								}},
 							}}},
@@ -179,17 +174,6 @@ func createPipeline(
 			},
 		},
 		userPipeline,
-		mongo.Pipeline{
-			{
-				{"$addFields", bson.D{
-					{tokenKeyStringField, bson.D{
-						{"$_internalKeyStringValue", bson.D{
-							{"input", "$_id"},
-						}},
-					}},
-				}},
-			},
-		},
 	)
 }
 
@@ -236,7 +220,7 @@ func runChangeStreamThread(ctx context.Context, cfg threadConfig) {
 				return
 			}
 			if !cfg.sendBatch(sctx, eventsBatch{
-				OperationTime: *sess.OperationTime(),
+				OperationTime: lo.FromPtr(sess.OperationTime()),
 				ClusterTime:   sess.ClusterTime(),
 			}) {
 				return
@@ -244,12 +228,12 @@ func runChangeStreamThread(ctx context.Context, cfg threadConfig) {
 			continue
 		}
 
-		events = append(events, cs.Current)
+		events = append(events, slices.Clone(cs.Current))
 
 		if cs.RemainingBatchLength() == 0 {
 			if !cfg.sendBatch(sctx, eventsBatch{
 				Events:        slices.Clone(events),
-				OperationTime: *sess.OperationTime(),
+				OperationTime: lo.FromPtr(sess.OperationTime()),
 				ClusterTime:   sess.ClusterTime(),
 			}) {
 				return
@@ -332,7 +316,7 @@ func (pcs *ParallelChangeStream) fillBatch(
 	blocking bool,
 	sess *mongo.Session,
 ) bool {
-	for len(pcs.curChanBatch[i].Events) == 0 {
+	if len(pcs.curChanBatch[i].Events) == 0 {
 		select {
 		case <-ctx.Done():
 			pcs.nextErr = ctx.Err()
@@ -344,13 +328,15 @@ func (pcs *ParallelChangeStream) fillBatch(
 				pcs.canceler(pcs.nextErr)
 				return false
 			}
+
 			if !pcs.advanceSession(sess, batch) {
 				return false
 			}
+
 			pcs.curChanBatch[i] = batch
 		}
 		if !blocking && len(pcs.curChanBatch[i].Events) == 0 {
-			break
+			return false
 		}
 	}
 	return true
@@ -361,23 +347,7 @@ func (pcs *ParallelChangeStream) pickAndConsume(chansWithEvents []int, chanToken
 		return bytes.Compare(chanToken[i], chanToken[j]) < 0
 	})
 
-	current, found, err := bsontools.RemoveFromRaw(
-		pcs.curChanBatch[nextChan].Events[0],
-		tokenKeyStringField,
-	)
-	if !found {
-		panic("no token key string field in change event??")
-	}
-	if err != nil {
-		pcs.nextErr = fmt.Errorf(
-			"remove token key string field from change event for thread %d: %w",
-			nextChan, err,
-		)
-		pcs.canceler(pcs.nextErr)
-		return false
-	}
-
-	pcs.current = current
+	pcs.current = pcs.curChanBatch[nextChan].Events[0]
 	pcs.curChanBatch[nextChan].Events = pcs.curChanBatch[nextChan].Events[1:]
 	return true
 }
@@ -397,16 +367,22 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 			}
 			continue
 		}
-		token, err := bsontools.RawLookup[bson.Binary](
-			pcs.curChanBatch[i].Events[0],
-			tokenKeyStringField,
+		token, err := pcs.curChanBatch[i].Events[0].LookupErr(
+			"_id",
+			"_data",
 		)
 		if err != nil {
-			pcs.nextErr = fmt.Errorf("lookup event token for thread %d: %w", i, err)
+			pcs.nextErr = fmt.Errorf("lookup resume token for thread %d: %w", i, err)
 			pcs.canceler(pcs.nextErr)
 			return false
 		}
-		chanToken[i] = token.Data
+		if token.Type != bson.TypeString {
+			pcs.nextErr = fmt.Errorf("resume token for thread %d is %s not %s", i, token.Type, bson.TypeString)
+			pcs.canceler(pcs.nextErr)
+			return false
+		}
+
+		chanToken[i] = token.Value
 		chansWithEvents = append(chansWithEvents, i)
 	}
 
