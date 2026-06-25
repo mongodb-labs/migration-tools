@@ -235,6 +235,7 @@ func runChangeStreamThread(ctx context.Context, cfg threadConfig) {
 				Events:        slices.Clone(events),
 				OperationTime: lo.FromPtr(sess.OperationTime()),
 				ClusterTime:   sess.ClusterTime(),
+				ResumeToken:   cs.ResumeToken(),
 			}) {
 				return
 			}
@@ -344,6 +345,9 @@ func (pcs *ParallelChangeStream) fillBatch(
 }
 
 func (pcs *ParallelChangeStream) pickAndConsume(chansWithEvents []int, chanToken [][]byte) error {
+	//fmt.Printf("----- chansWithEvents %v\n", chansWithEvents)
+	//fmt.Printf("----- chanToken %v\n", chanToken)
+
 	nextChan := lo.MinBy(chansWithEvents, func(i, j int) bool {
 		return bytes.Compare(chanToken[i], chanToken[j]) < 0
 	})
@@ -361,79 +365,172 @@ func (pcs *ParallelChangeStream) pickAndConsume(chansWithEvents []int, chanToken
 }
 
 func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
-	chanToken := make([][]byte, len(pcs.channels))
-	chansWithEvents := make([]int, 0, len(pcs.channels))
 	sess := mongo.SessionFromContext(ctx)
-
-	for len(chansWithEvents) == 0 {
-		for i := range pcs.channels {
-			if !pcs.fillBatch(ctx, i, sess) {
-				continue
-			}
-
-			token, err := pcs.curChanBatch[i].Events[0].LookupErr(
-				"_id",
-				"_data",
-			)
-			if err != nil {
-				pcs.nextErr = fmt.Errorf("lookup resume token for thread %d: %w", i, err)
-				pcs.canceler(pcs.nextErr)
-				return false
-			}
-			if token.Type != bson.TypeString {
-				pcs.nextErr = fmt.Errorf("resume token for thread %d is %s not %s", i, token.Type, bson.TypeString)
-				pcs.canceler(pcs.nextErr)
-				return false
-			}
-
-			chanToken[i] = token.Value
-			chansWithEvents = append(chansWithEvents, i)
+	for {
+		if !pcs.nonBlockingDrain(sess) {
+			return false
 		}
-
-		if !blocking && len(chansWithEvents) == 0 {
-			tokens := lo.Map(
-				pcs.curChanBatch,
-				func(batch eventsBatch, _ int) []byte {
-					return batch.ResumeToken
-				},
-			)
-
-			tokenData := make([]string, 0, len(tokens))
-
-			for _, token := range tokens {
-				tokenD, err := bsontools.RawLookup[string](
-					token,
-					"_id",
-					"_data",
-				)
-				if err != nil {
-					pcs.nextErr = fmt.Errorf("lookup resume token: %w", err)
-					pcs.canceler(pcs.nextErr)
-					return false
-				}
-
-				tokenData = append(tokenData, tokenD)
+		chanToken := make([][]byte, len(pcs.channels))
+		chansWithEvents := pcs.collectEventChannels(chanToken)
+		if chansWithEvents == nil {
+			return false
+		}
+		mustCheck := pcs.findMustCheckChannel(chansWithEvents, chanToken)
+		if len(chansWithEvents) > 0 && mustCheck < 0 {
+			if err := pcs.pickAndConsume(chansWithEvents, chanToken); err != nil {
+				pcs.nextErr = err
+				pcs.canceler(pcs.nextErr)
+				return false
 			}
-
-			nextTokenIdx := lo.MinBy(
-				lo.Range(len(tokens)),
-				func(a, b int) bool {
-					return cmp.Compare(tokenData[a], tokenData[b]) < 0
-				},
-			)
-
-			pcs.resumeToken = tokens[nextTokenIdx]
-
+			return true
+		}
+		if !blocking {
+			pcs.setResumeTokenWhenEmpty()
+			return false
+		}
+		if mustCheck < 0 {
+			mustCheck = 0
+		}
+		_ = pcs.fillBatch(ctx, mustCheck, sess)
+		if pcs.nextErr != nil {
 			return false
 		}
 	}
+}
 
-	err := pcs.pickAndConsume(chansWithEvents, chanToken)
-	if err != nil {
-		pcs.nextErr = err
-		pcs.canceler(pcs.nextErr)
-		return false
+func (pcs *ParallelChangeStream) setResumeTokenWhenEmpty() {
+	tokens := lo.Map(
+		pcs.curChanBatch,
+		func(batch eventsBatch, _ int) []byte {
+			return batch.ResumeToken
+		},
+	)
+
+	tokenData := make([]string, 0, len(tokens))
+
+	for _, token := range tokens {
+		tokenD, err := bsontools.RawLookup[string](token, "_data")
+		if err != nil {
+			pcs.nextErr = fmt.Errorf("lookup resume token: %w", err)
+			pcs.canceler(pcs.nextErr)
+			return
+		}
+
+		tokenData = append(tokenData, tokenD)
 	}
 
+	nextTokenIdx := lo.MaxBy(
+		lo.Range(len(tokens)),
+		func(a, b int) bool {
+			return cmp.Compare(tokenData[a], tokenData[b]) > 0
+		},
+	)
+
+	pcs.resumeToken = tokens[nextTokenIdx]
+}
+
+// nonBlockingDrain exhausts each channel's buffer until it finds a batch with
+// events or the buffer is empty, giving us the freshest watermark without blocking.
+func (pcs *ParallelChangeStream) nonBlockingDrain(sess *mongo.Session) bool {
+	for i := range pcs.channels {
+		if len(pcs.curChanBatch[i].Events) > 0 {
+			continue
+		}
+	drainLoop:
+		for {
+			select {
+			case batch, ok := <-pcs.channels[i]:
+				if !ok {
+					pcs.nextErr = fmt.Errorf("channel %d closed unexpectedly", i)
+					pcs.canceler(pcs.nextErr)
+					return false
+				}
+				if !pcs.advanceSession(sess, batch) {
+					return false
+				}
+				pcs.curChanBatch[i] = batch
+				if len(batch.Events) > 0 {
+					break drainLoop
+				}
+			default:
+				break drainLoop
+			}
+		}
+	}
 	return true
+}
+
+// collectEventChannels returns the indices of channels that have buffered
+// events, populating chanToken with each channel's sort key. Returns nil on
+// error (pcs.nextErr is set).
+func (pcs *ParallelChangeStream) collectEventChannels(chanToken [][]byte) []int {
+	chans := make([]int, 0, len(pcs.channels))
+	for i := range pcs.channels {
+		if len(pcs.curChanBatch[i].Events) == 0 {
+			continue
+		}
+		token, err := pcs.curChanBatch[i].Events[0].LookupErr("_id", "_data")
+		if err != nil {
+			pcs.nextErr = fmt.Errorf("lookup resume token for thread %d: %w", i, err)
+			pcs.canceler(pcs.nextErr)
+			return nil
+		}
+		if token.Type != bson.TypeString {
+			pcs.nextErr = fmt.Errorf("resume token for thread %d is %s not %s", i, token.Type, bson.TypeString)
+			pcs.canceler(pcs.nextErr)
+			return nil
+		}
+		chanToken[i] = token.Value[4:]
+		chans = append(chans, i)
+	}
+	return chans
+}
+
+// findMustCheckChannel returns the index of the first channel that might have
+// events earlier than the current best candidate, or -1 if all empty channels
+// are safe to skip. A channel is safe when its known watermark keystring is >=
+// the best candidate's keystring.
+func (pcs *ParallelChangeStream) findMustCheckChannel(chansWithEvents []int, chanToken [][]byte) int {
+	if len(chansWithEvents) == 0 {
+		return pcs.firstEmptyChannel()
+	}
+	bestChan := lo.MinBy(chansWithEvents, func(i, j int) bool {
+		return bytes.Compare(chanToken[i], chanToken[j]) < 0
+	})
+	for i := range pcs.channels {
+		if len(pcs.curChanBatch[i].Events) > 0 {
+			continue
+		}
+		if !pcs.chanWatermarkSafe(i, chanToken[bestChan]) {
+			return i
+		}
+	}
+	return -1
+}
+
+func (pcs *ParallelChangeStream) firstEmptyChannel() int {
+	for i := range pcs.channels {
+		if len(pcs.curChanBatch[i].Events) == 0 {
+			return i
+		}
+	}
+	return -1
+}
+
+
+// chanWatermarkSafe reports whether channel i's known watermark keystring is >=
+// minToken, meaning the channel cannot have any events before minToken.
+// minToken is in token.Value[4:] format (BSON string bytes including null terminator).
+func (pcs *ParallelChangeStream) chanWatermarkSafe(chanIdx int, minToken []byte) bool {
+	token := pcs.curChanBatch[chanIdx].ResumeToken
+	if len(token) == 0 {
+		return false
+	}
+	dataStr, err := bsontools.RawLookup[string](token, "_data")
+	if err != nil {
+		return false
+	}
+	// Append null terminator to match the minToken format from token.Value[4:].
+	watermark := append([]byte(dataStr), 0)
+	return bytes.Compare(watermark, minToken) >= 0
 }

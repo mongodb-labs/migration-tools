@@ -11,8 +11,11 @@ import (
 	"math/rand/v2"
 	"slices"
 
+	"github.com/mongodb-labs/migration-tools/bsontools"
 	"github.com/mongodb-labs/migration-tools/internal"
 	"github.com/mongodb-labs/migration-tools/legacytools"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -131,7 +134,7 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	t.Logf("Plain change stream captured %d events", len(plainEvents))
 
 	pcs, err := NewParallel(tctx, db, Options{
-		Streams: 1,
+		Streams: 7,
 		Options: csOpts,
 	})
 	require.NoError(t, err)
@@ -140,10 +143,27 @@ func TestIntegration_EventOrdering(t *testing.T) {
 	// Collect from the parallel change stream.
 	pcsEvents := drainParallelChangeStream(tctx, t, pcs, isSentinel)
 
-	require.Equal(
+	plainTimestamps := lo.Map(plainEvents, func(ev bson.Raw, _ int) bson.Timestamp {
+		return lo.Must(bsontools.RawLookup[bson.Timestamp](ev, "clusterTime"))
+	})
+	pcsTimestamps := lo.Map(pcsEvents, func(ev bson.Raw, _ int) bson.Timestamp {
+		return lo.Must(bsontools.RawLookup[bson.Timestamp](ev, "clusterTime"))
+	})
+
+	// Require here so that we don’t spew a redundant diff if the timestamps are out of order.
+	require.Equal(t, plainTimestamps, pcsTimestamps, "parallel change stream’s timestamps must match plain change stream’s")
+
+	plainJSONEvents := lo.Map(plainEvents, func(ev bson.Raw, _ int) string {
+		return ev.String()
+	})
+	pcsJSONEvents := lo.Map(pcsEvents, func(ev bson.Raw, _ int) string {
+		return ev.String()
+	})
+
+	assert.Equal(
 		t,
-		plainEvents,
-		pcsEvents,
+		plainJSONEvents[:1],
+		pcsJSONEvents[:1],
 		"parallel change stream’s events must match plain change stream’s",
 	)
 }
