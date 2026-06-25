@@ -133,38 +133,78 @@ func TestIntegration_EventOrdering(t *testing.T) {
 
 	t.Logf("Plain change stream captured %d events", len(plainEvents))
 
-	pcs, err := NewParallel(tctx, db, Options{
-		Streams: 7,
-		Options: csOpts,
-	})
-	require.NoError(t, err)
-	defer pcs.Close()
-
-	// Collect from the parallel change stream.
-	pcsEvents := drainParallelChangeStream(tctx, t, pcs, isSentinel)
-
 	plainTimestamps := lo.Map(plainEvents, func(ev bson.Raw, _ int) bson.Timestamp {
 		return lo.Must(bsontools.RawLookup[bson.Timestamp](ev, "clusterTime"))
 	})
-	pcsTimestamps := lo.Map(pcsEvents, func(ev bson.Raw, _ int) bson.Timestamp {
-		return lo.Must(bsontools.RawLookup[bson.Timestamp](ev, "clusterTime"))
-	})
-
-	// Require here so that we don’t spew a redundant diff if the timestamps are out of order.
-	require.Equal(t, plainTimestamps, pcsTimestamps, "parallel change stream’s timestamps must match plain change stream’s")
 
 	plainJSONEvents := lo.Map(plainEvents, func(ev bson.Raw, _ int) string {
 		return ev.String()
 	})
-	pcsJSONEvents := lo.Map(pcsEvents, func(ev bson.Raw, _ int) string {
-		return ev.String()
-	})
 
-	assert.Equal(
-		t,
-		plainJSONEvents[:1],
-		pcsJSONEvents[:1],
-		"parallel change stream’s events must match plain change stream’s",
+	checkPCSEvents := func(t *testing.T, pcsEvents []bson.Raw) {
+		pcsTimestamps := lo.Map(pcsEvents, func(ev bson.Raw, _ int) bson.Timestamp {
+			return lo.Must(bsontools.RawLookup[bson.Timestamp](ev, "clusterTime"))
+		})
+
+		// Require here so that we don’t spew a redundant diff if the timestamps are out of order.
+		require.Equal(t, plainTimestamps, pcsTimestamps, "parallel change stream’s timestamps must match plain change stream’s")
+
+		pcsJSONEvents := lo.Map(pcsEvents, func(ev bson.Raw, _ int) string {
+			return ev.String()
+		})
+
+		assert.Equal(
+			t,
+			plainJSONEvents[:1],
+			pcsJSONEvents[:1],
+			"parallel change stream’s events must match plain change stream’s",
+		)
+	}
+
+	t.Run(
+		"blocking iteration",
+		func(t *testing.T) {
+			ctx := t.Context()
+			t.Parallel()
+
+			pcs, err := NewParallel(ctx, db, Options{
+				Streams: 7,
+				Options: csOpts,
+			})
+			require.NoError(t, err)
+			defer pcs.Close()
+
+			// Collect from the parallel change stream.
+			pcsEvents := drainParallelChangeStream(ctx, t, pcs, isSentinel)
+
+			checkPCSEvents(t, pcsEvents)
+		},
+	)
+
+	t.Run(
+		"non-blocking iteration",
+		func(t *testing.T) {
+			ctx := t.Context()
+			t.Parallel()
+
+			pcs, err := NewParallel(ctx, db, Options{
+				Streams: 7,
+				Options: csOpts,
+			})
+			require.NoError(t, err)
+			defer pcs.Close()
+
+			var pcsEvents []bson.Raw
+
+			for range len(plainEvents) {
+				require.True(t, pcs.Next(ctx), "Next() must return true for each event")
+				require.NoError(t, pcs.Err(), "Next() must not return an error")
+
+				pcsEvents = append(pcsEvents, pcs.Current())
+			}
+
+			checkPCSEvents(t, pcsEvents)
+		},
 	)
 }
 

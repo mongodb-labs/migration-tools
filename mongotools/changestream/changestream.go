@@ -419,10 +419,10 @@ func (pcs *ParallelChangeStream) setResumeTokenWhenEmpty() {
 		tokenData = append(tokenData, tokenD)
 	}
 
-	nextTokenIdx := lo.MaxBy(
+	nextTokenIdx := lo.MinBy(
 		lo.Range(len(tokens)),
 		func(a, b int) bool {
-			return cmp.Compare(tokenData[a], tokenData[b]) > 0
+			return cmp.Compare(tokenData[a], tokenData[b]) < 0
 		},
 	)
 
@@ -516,7 +516,6 @@ func (pcs *ParallelChangeStream) firstEmptyChannel() int {
 	}
 	return -1
 }
-
 
 // chanWatermarkSafe reports whether channel i's known watermark keystring is >=
 // minToken, meaning the channel cannot have any events before minToken.
