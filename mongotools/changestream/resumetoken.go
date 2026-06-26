@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/mongodb-labs/migration-tools/bsontools"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/x/bsonx/bsoncore"
 )
@@ -13,6 +14,27 @@ const (
 	// (cf. https://github.com/mongodb-js/mongodb-resumetoken-decoder/blob/2d64962d194a5b99bb28ad1da6e7f1e26f6db0b7/src/keystringdecoder.ts#L20)
 	rtTimeStampType uint8 = 130
 )
+
+func getTsFromResumeToken(rt bson.Raw) (bson.Timestamp, error) {
+	// The resume token is a BSON document with a single field, "_data", whose value is a binary string.
+	dataStr, err := bsontools.RawLookup[string](rt, "_data")
+	if err != nil {
+		return bson.Timestamp{}, fmt.Errorf("parse resume token to string: %w", err)
+	}
+	return getTsFromStringResumeToken(dataStr)
+}
+
+func getResumeTokenHexBytes(rt bson.Raw) ([]byte, error) {
+	// TODO optimize
+
+	// The resume token is a BSON document with a single field, "_data", whose value is a binary string.
+	dataStr, err := bsontools.RawLookup[string](rt, "_data")
+	if err != nil {
+		return nil, fmt.Errorf("parse resume token to string: %w", err)
+	}
+
+	return []byte(dataStr), nil
+}
 
 func getTsFromStringResumeToken(dataString string) (bson.Timestamp, error) {
 	keyStringBinData, decodeErr := hex.DecodeString(dataString)

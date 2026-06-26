@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"sync/atomic"
 
 	"github.com/mongodb-labs/migration-tools/bsontools"
@@ -74,16 +73,6 @@ type eventsBatch struct {
 	OperationTime bson.Timestamp
 	ClusterTime   bson.Raw
 	ResumeToken   bson.Raw
-}
-
-type threadConfig struct {
-	watcher   Watcher
-	threadNum int
-	pipeline  mongo.Pipeline
-	csOpts    options.Lister[options.ChangeStreamOptions]
-	client    *mongo.Client
-	curChan   chan<- eventsBatch
-	setErr    func(error)
 }
 
 // NewParallel creates a new ParallelChangeStream.
@@ -176,86 +165,17 @@ func createPipeline(
 	)
 }
 
-// sendBatch sends a batch to the channel, or records an error if the context
-// is done first. Returns false when the thread should exit.
-func (cfg threadConfig) sendBatch(ctx context.Context, batch eventsBatch) bool {
-	select {
-	case <-ctx.Done():
-		cfg.setErr(ctx.Err())
-		return false
-	case cfg.curChan <- batch:
-		return true
-	}
-}
-
-func runChangeStreamThread(ctx context.Context, cfg threadConfig) {
-	defer close(cfg.curChan)
-
-	csOpts := cfg.csOpts
-	if csOpts == nil {
-		csOpts = options.ChangeStream()
-	}
-
-	sess, err := cfg.client.StartSession(options.Session().SetCausalConsistency(true))
-	if err != nil {
-		cfg.setErr(fmt.Errorf("start session for thread %d: %w", cfg.threadNum, err))
-		return
-	}
-	sctx := mongo.NewSessionContext(ctx, sess)
-	defer sess.EndSession(sctx)
-
-	cs, err := cfg.watcher.Watch(sctx, cfg.pipeline, csOpts)
-	if err != nil {
-		cfg.setErr(fmt.Errorf("watch change stream for thread %d: %w", cfg.threadNum, err))
-		return
-	}
-	defer cs.Close(sctx)
-
-	var events []bson.Raw
-	for {
-		if !cs.TryNext(sctx) {
-			if err := cs.Err(); err != nil {
-				cfg.setErr(fmt.Errorf("change stream error for thread %d: %w", cfg.threadNum, err))
-				return
-			}
-			if !cfg.sendBatch(sctx, eventsBatch{
-				OperationTime: lo.FromPtr(sess.OperationTime()),
-				ClusterTime:   sess.ClusterTime(),
-				ResumeToken:   cs.ResumeToken(),
-			}) {
-				return
-			}
-			continue
-		}
-
-		events = append(events, slices.Clone(cs.Current))
-
-		if cs.RemainingBatchLength() == 0 {
-			if !cfg.sendBatch(sctx, eventsBatch{
-				Events:        slices.Clone(events),
-				OperationTime: lo.FromPtr(sess.OperationTime()),
-				ClusterTime:   sess.ClusterTime(),
-				ResumeToken:   cs.ResumeToken(),
-			}) {
-				return
-			}
-			clear(events)
-			events = events[:0]
-		}
-	}
-}
-
 // Next iterates the change stream. It blocks until the next change event is
 // available, an error occurs, or the change stream is closed.
 func (pcs *ParallelChangeStream) Next(ctx context.Context) bool {
-	return pcs.next(ctx, true)
+	return pcs.next(ctx, blockingForever)
 }
 
 // TryNext is like Next, but it will only block long enough to send a single
 // `getMore` request to the server. If that response contains no events, this
 // returns false.
 func (pcs *ParallelChangeStream) TryNext(ctx context.Context) bool {
-	return pcs.next(ctx, false)
+	return pcs.next(ctx, blockingOnce)
 }
 
 // Current returns the current change event.
@@ -364,8 +284,178 @@ func (pcs *ParallelChangeStream) pickAndConsume(chansWithEvents []int, chanToken
 	return nil
 }
 
-func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
-	sess := mongo.SessionFromContext(ctx)
+type blockingType int
+
+const (
+	blockingReturn  = 0
+	blockingOnce    = 1
+	blockingForever = 2
+)
+
+func (pcs *ParallelChangeStream) next(
+	ctx context.Context,
+	blocking blockingType,
+) bool {
+	//sess := mongo.SessionFromContext(ctx)
+
+	nextChanEvent := map[int]bson.Raw{}
+	emptyBatchResumeTokenData := map[int][]byte{}
+
+	for i, batch := range pcs.curChanBatch {
+		if len(batch.Events) > 0 {
+			nextChanEvent[i] = batch.Events[0]
+		} else if len(batch.ResumeToken) > 0 {
+			data, err := getResumeTokenHexBytes(batch.ResumeToken)
+			if err != nil {
+				pcs.nextErr = fmt.Errorf("get resume token hex bytes for thread %d: %w", i, err)
+				pcs.canceler(pcs.nextErr)
+				return false
+			}
+			emptyBatchResumeTokenData[i] = data
+		}
+	}
+
+	if len(nextChanEvent) == 0 {
+		fmt.Printf("------ all batches empty; fetching\n")
+
+		if blocking == blockingReturn {
+			pcs.setResumeTokenWhenEmpty()
+			return false
+		}
+
+		// There are no cached events, so we need to refresh all channels.
+		chansToFetch := lo.Range(len(pcs.channels))
+
+		if err := pcs.refreshChanBatches(ctx, chansToFetch); err != nil {
+			pcs.nextErr = fmt.Errorf("refresh channel batches: %w", err)
+			pcs.canceler(pcs.nextErr)
+			return false
+		}
+
+		if blocking == blockingOnce {
+			blocking = blockingReturn
+		}
+
+		return pcs.next(ctx, blocking)
+	}
+
+	// We need to analyze the next events.
+	var chanToken = map[int][]byte{}
+	for i, event := range nextChanEvent {
+		token, err := event.LookupErr("_id", "_data")
+		if err != nil {
+			pcs.nextErr = fmt.Errorf("lookup resume token for thread %d: %w", i, err)
+			pcs.canceler(pcs.nextErr)
+			return false
+		}
+		if token.Type != bson.TypeString {
+			pcs.nextErr = fmt.Errorf("resume token for thread %d is %s not %s", i, token.Type, bson.TypeString)
+			pcs.canceler(pcs.nextErr)
+			return false
+		}
+
+		chanToken[i] = token.Value[4:]
+		chanToken[i] = chanToken[i][:len(chanToken[i])-1] // remove NUL
+	}
+
+	nextChan := lo.MinBy(lo.Keys(nextChanEvent), func(i, j int) bool {
+		return bytes.Compare(chanToken[i], chanToken[j]) < 0
+	})
+
+	returnNext := func() bool {
+		fmt.Printf("------ returning next event from channel %d\n", nextChan)
+
+		pcs.current = pcs.curChanBatch[nextChan].Events[0]
+		pcs.curChanBatch[nextChan].Events = pcs.curChanBatch[nextChan].Events[1:]
+
+		var err error
+		pcs.resumeToken, err = bsontools.RawLookup[bson.Raw](pcs.current, "_id")
+		if err != nil {
+			pcs.nextErr = fmt.Errorf("lookup resume token for thread %d: %w", nextChan, err)
+			pcs.canceler(pcs.nextErr)
+			return false
+		}
+
+		return true
+	}
+
+	if len(nextChanEvent) == len(pcs.channels) {
+		// All channels have events buffered, so we can pick the next event without
+		// blocking.
+
+		return returnNext()
+	}
+
+	// At least one channel has no events buffered, so we need to check if any of
+	// those channels could have events earlier than the current best candidate.
+	// If so, we need to block until we can get the next event from those channels.
+	nextChanRTData, err := getResumeTokenHexBytes(pcs.curChanBatch[nextChan].ResumeToken)
+	if err != nil {
+		pcs.nextErr = fmt.Errorf("get resume token hex bytes for thread %d: %w", nextChan, err)
+		pcs.canceler(pcs.nextErr)
+		return false
+	}
+
+	var chansToFetch []int
+
+	for i, rtData := range emptyBatchResumeTokenData {
+		if bytes.Compare(rtData, nextChanRTData) < 0 {
+			fmt.Printf("------ channel %d has empty batch with rtData=%v < nextChanRTData=%v; must fetch\n", i, rtData, nextChanRTData)
+			chansToFetch = append(chansToFetch, i)
+		}
+	}
+
+	if len(chansToFetch) == 0 {
+		// All empty channels are current with the earliest-cached event.
+		// Thus, the earliest event is the one cached.
+		return returnNext()
+	}
+
+	switch blocking {
+	case blockingReturn:
+		pcs.setResumeTokenWhenEmpty()
+		return false
+	case blockingOnce:
+		blocking = blockingReturn
+	case blockingForever:
+	default:
+		panic(fmt.Sprintf("unexpected blocking type: %v", blocking))
+	}
+
+	if err := pcs.refreshChanBatches(ctx, chansToFetch); err != nil {
+		pcs.nextErr = fmt.Errorf("refresh channel batches: %w", err)
+		pcs.canceler(pcs.nextErr)
+		return false
+	}
+
+	// Now that we’ve refreshed the relevant batches, we can pick the next event again.
+
+	return pcs.next(ctx, blocking)
+}
+
+func (pcs *ParallelChangeStream) refreshChanBatches(
+	ctx context.Context,
+	chansToFetch []int,
+) error {
+	fmt.Printf("------ refreshing channels: %v\n", chansToFetch)
+
+	chans := lo.Map(chansToFetch, func(i int, _ int) chan eventsBatch {
+		return pcs.channels[i]
+	})
+
+	batches, err := readEachChannelOnce(ctx, chans...)
+	if err != nil {
+		return fmt.Errorf("read from channels: %w", err)
+	}
+
+	for i, idx := range chansToFetch {
+		pcs.curChanBatch[idx] = batches[i]
+	}
+
+	return nil
+}
+
+/*
 	for {
 		if !pcs.nonBlockingDrain(sess) {
 			return false
@@ -396,7 +486,7 @@ func (pcs *ParallelChangeStream) next(ctx context.Context, blocking bool) bool {
 			return false
 		}
 	}
-}
+*/
 
 func (pcs *ParallelChangeStream) setResumeTokenWhenEmpty() {
 	tokens := lo.Map(
@@ -429,6 +519,7 @@ func (pcs *ParallelChangeStream) setResumeTokenWhenEmpty() {
 	pcs.resumeToken = tokens[nextTokenIdx]
 }
 
+/*
 // nonBlockingDrain exhausts each channel's buffer until it finds a batch with
 // events or the buffer is empty, giving us the freshest watermark without blocking.
 func (pcs *ParallelChangeStream) nonBlockingDrain(sess *mongo.Session) bool {
@@ -533,3 +624,4 @@ func (pcs *ParallelChangeStream) chanWatermarkSafe(chanIdx int, minToken []byte)
 	watermark := append([]byte(dataStr), 0)
 	return bytes.Compare(watermark, minToken) >= 0
 }
+*/

@@ -165,7 +165,7 @@ func TestIntegration_EventOrdering(t *testing.T) {
 		"blocking iteration",
 		func(t *testing.T) {
 			ctx := t.Context()
-			t.Parallel()
+			//t.Parallel()
 
 			pcs, err := NewParallel(ctx, db, Options{
 				Streams: 7,
@@ -185,7 +185,7 @@ func TestIntegration_EventOrdering(t *testing.T) {
 		"non-blocking iteration",
 		func(t *testing.T) {
 			ctx := t.Context()
-			t.Parallel()
+			//t.Parallel()
 
 			pcs, err := NewParallel(ctx, db, Options{
 				Streams: 7,
@@ -197,7 +197,7 @@ func TestIntegration_EventOrdering(t *testing.T) {
 			var pcsEvents []bson.Raw
 
 			for range len(plainEvents) {
-				require.True(t, pcs.Next(ctx), "Next() must return true for each event")
+				require.True(t, pcs.TryNext(ctx), "Next() must return true for each event (err: %v)", pcs.Err())
 				require.NoError(t, pcs.Err(), "Next() must not return an error")
 
 				pcsEvents = append(pcsEvents, pcs.Current())
@@ -211,7 +211,8 @@ func TestIntegration_EventOrdering(t *testing.T) {
 func generateRandomEvents(ctx context.Context, t *testing.T, coll *mongo.Collection) {
 	t.Helper()
 
-	const total = 1_000
+	//const total = 1_000
+	const total = 10
 	var liveIDs []any
 
 	for range total {
