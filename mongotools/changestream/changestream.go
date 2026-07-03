@@ -400,7 +400,7 @@ func (pcs *ParallelChangeStream) next(
 
 	for i, rtData := range emptyBatchResumeTokenData {
 		if bytes.Compare(rtData, nextChanRTData) < 0 {
-			fmt.Printf("------ channel %d has empty batch with rtData=%v < nextChanRTData=%v; must fetch\n", i, rtData, nextChanRTData)
+			fmt.Printf("------ channel %d has empty batch with rtData=%v < nextChanRTData=%v; must fetch\n", i, string(rtData), string(nextChanRTData))
 			chansToFetch = append(chansToFetch, i)
 		}
 	}
