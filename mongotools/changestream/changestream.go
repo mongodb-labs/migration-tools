@@ -46,10 +46,6 @@ type Options struct {
 	// Pipeline is the aggregation pipeline to apply to the change stream.
 	Pipeline mongo.Pipeline
 
-	// DispatchRef identifies the field in the change event used to dispatch a
-	// given event to a stream. If not provided, the default is `$_id`.
-	//DispatchRef any
-
 	// BatchesBufferSize is the number of change stream batches to buffer per
 	// stream. The default is 10.
 	BatchesBufferSize int
