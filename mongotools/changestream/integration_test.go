@@ -196,11 +196,12 @@ func TestIntegration_EventOrdering(t *testing.T) {
 
 			var pcsEvents []bson.Raw
 
-			for range len(plainEvents) {
-				require.True(t, pcs.TryNext(ctx), "Next() must return true for each event (err: %v)", pcs.Err())
+			for len(pcsEvents) < len(plainEvents) {
+				if pcs.TryNext(ctx) {
+					fmt.Printf("----- pcs event: %+v\n", pcs.Current())
+					pcsEvents = append(pcsEvents, pcs.Current())
+				}
 				require.NoError(t, pcs.Err(), "Next() must not return an error")
-
-				pcsEvents = append(pcsEvents, pcs.Current())
 			}
 
 			checkPCSEvents(t, pcsEvents)

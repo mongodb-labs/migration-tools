@@ -2,7 +2,6 @@
 package changestream
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -69,10 +68,10 @@ type dbLike interface {
 }
 
 type eventsBatch struct {
-	Events        []bson.Raw
-	OperationTime bson.Timestamp
-	ClusterTime   bson.Raw
-	ResumeToken   bson.Raw
+	Events               []bson.Raw
+	OperationTime        bson.Timestamp
+	ClusterTime          bson.Raw
+	PostBatchResumeToken bson.Raw
 }
 
 // NewParallel creates a new ParallelChangeStream.
@@ -122,10 +121,10 @@ func NewParallel(
 				dispatchInput,
 				opts.Pipeline,
 			),
-			csOpts:  opts.Options,
-			client:  client,
-			curChan: curChan,
-			setErr:  setErr,
+			csOpts:    opts.Options,
+			client:    client,
+			curChan:   curChan,
+			errSetter: setErr,
 		})
 	}
 
@@ -189,8 +188,8 @@ func (pcs *ParallelChangeStream) Close() {
 }
 
 // Err returns whatever error, if any, happened while iterating the change
-// stream. This may include errors from the underlying streams or from the
-// "top-level" stream (or both).
+// stream. This may include errors from the underlying streams, from the
+// “top-level” stream, or both.
 func (pcs *ParallelChangeStream) Err() error {
 	nextErr := pcs.nextErr
 
@@ -218,6 +217,7 @@ func (pcs *ParallelChangeStream) ResumeToken() bson.Raw {
 	return pcs.resumeToken
 }
 
+/*
 func (pcs *ParallelChangeStream) advanceSession(sess *mongo.Session, batch eventsBatch) bool {
 	if sess == nil {
 		return true
@@ -234,6 +234,7 @@ func (pcs *ParallelChangeStream) advanceSession(sess *mongo.Session, batch event
 	}
 	return true
 }
+
 
 func (pcs *ParallelChangeStream) fillBatch(
 	ctx context.Context,
@@ -283,6 +284,7 @@ func (pcs *ParallelChangeStream) pickAndConsume(chansWithEvents []int, chanToken
 
 	return nil
 }
+*/
 
 type blockingType int
 
@@ -298,14 +300,16 @@ func (pcs *ParallelChangeStream) next(
 ) bool {
 	//sess := mongo.SessionFromContext(ctx)
 
-	nextChanEvent := map[int]bson.Raw{}
-	emptyBatchResumeTokenData := map[int][]byte{}
+	// Optimize the case where each channel has events buffered:
+	nextChanEvent := make(map[int]bson.Raw, len(pcs.channels))
+
+	emptyBatchResumeTokenData := map[int]string{}
 
 	for i, batch := range pcs.curChanBatch {
 		if len(batch.Events) > 0 {
 			nextChanEvent[i] = batch.Events[0]
-		} else if len(batch.ResumeToken) > 0 {
-			data, err := getResumeTokenHexBytes(batch.ResumeToken)
+		} else if len(batch.PostBatchResumeToken) > 0 {
+			data, err := getResumeTokenHexString(batch.PostBatchResumeToken)
 			if err != nil {
 				pcs.nextErr = fmt.Errorf("get resume token hex bytes for thread %d: %w", i, err)
 				pcs.canceler(pcs.nextErr)
@@ -315,13 +319,15 @@ func (pcs *ParallelChangeStream) next(
 		}
 	}
 
-	if len(nextChanEvent) == 0 {
-		fmt.Printf("------ all batches empty; fetching\n")
+	fmt.Printf("------ have %d nonempty channels\n", len(nextChanEvent))
 
+	if len(nextChanEvent) == 0 {
 		if blocking == blockingReturn {
 			pcs.setResumeTokenWhenEmpty()
 			return false
 		}
+
+		fmt.Printf("------ all batches empty; fetching\n")
 
 		// There are no cached events, so we need to refresh all channels.
 		chansToFetch := lo.Range(len(pcs.channels))
@@ -336,30 +342,26 @@ func (pcs *ParallelChangeStream) next(
 			blocking = blockingReturn
 		}
 
+		fmt.Printf("------ refreshed all channels; calling next again\n")
+
 		return pcs.next(ctx, blocking)
 	}
 
-	// We need to analyze the next events.
-	var chanToken = map[int][]byte{}
-	for i, event := range nextChanEvent {
-		token, err := event.LookupErr("_id", "_data")
-		if err != nil {
-			pcs.nextErr = fmt.Errorf("lookup resume token for thread %d: %w", i, err)
-			pcs.canceler(pcs.nextErr)
-			return false
-		}
-		if token.Type != bson.TypeString {
-			pcs.nextErr = fmt.Errorf("resume token for thread %d is %s not %s", i, token.Type, bson.TypeString)
-			pcs.canceler(pcs.nextErr)
-			return false
-		}
+	// We have at least one cached event. First identify the next among those.
 
-		chanToken[i] = token.Value[4:]
-		chanToken[i] = chanToken[i][:len(chanToken[i])-1] // remove NUL
+	var chanToken = map[int]string{}
+	for i, event := range nextChanEvent {
+		var err error
+		chanToken[i], err = bsontools.RawLookup[string](event, "_id", "_data")
+		if err != nil {
+			pcs.nextErr = fmt.Errorf("lookup resume token data for thread %d: %w", i, err)
+			pcs.canceler(pcs.nextErr)
+			return false
+		}
 	}
 
 	nextChan := lo.MinBy(lo.Keys(nextChanEvent), func(i, j int) bool {
-		return bytes.Compare(chanToken[i], chanToken[j]) < 0
+		return chanToken[i] < chanToken[j]
 	})
 
 	returnNext := func() bool {
@@ -389,18 +391,13 @@ func (pcs *ParallelChangeStream) next(
 	// At least one channel has no events buffered, so we need to check if any of
 	// those channels could have events earlier than the current best candidate.
 	// If so, we need to block until we can get the next event from those channels.
-	nextChanRTData, err := getResumeTokenHexBytes(pcs.curChanBatch[nextChan].ResumeToken)
-	if err != nil {
-		pcs.nextErr = fmt.Errorf("get resume token hex bytes for thread %d: %w", nextChan, err)
-		pcs.canceler(pcs.nextErr)
-		return false
-	}
+	nextEventRT := chanToken[nextChan]
 
 	var chansToFetch []int
 
 	for i, rtData := range emptyBatchResumeTokenData {
-		if bytes.Compare(rtData, nextChanRTData) < 0 {
-			fmt.Printf("------ channel %d has empty batch with rtData=%v < nextChanRTData=%v; must fetch\n", i, string(rtData), string(nextChanRTData))
+		if rtData < nextEventRT {
+			fmt.Printf("------ channel %d has empty batch with rtData=%v < nextEventRT=%v; must fetch\n", i, string(rtData), string(nextEventRT))
 			chansToFetch = append(chansToFetch, i)
 		}
 	}
@@ -437,9 +434,10 @@ func (pcs *ParallelChangeStream) refreshChanBatches(
 	ctx context.Context,
 	chansToFetch []int,
 ) error {
+	// For each indicated channel, read a batch & update curChanBatch.
 	fmt.Printf("------ refreshing channels: %v\n", chansToFetch)
 
-	chans := lo.Map(chansToFetch, func(i int, _ int) chan eventsBatch {
+	chans := lo.Map(chansToFetch, func(i int, _ int) <-chan eventsBatch {
 		return pcs.channels[i]
 	})
 
@@ -489,10 +487,16 @@ func (pcs *ParallelChangeStream) refreshChanBatches(
 */
 
 func (pcs *ParallelChangeStream) setResumeTokenWhenEmpty() {
+	// Iterate the current batches and find the minimum resume token. Then
+	// set that as the PCS’s resume token.
+	//
+	// The tokens themselves are BSON documents. We need to sort them by
+	// their `_data` field, which is a hex-encoded string.
+
 	tokens := lo.Map(
 		pcs.curChanBatch,
 		func(batch eventsBatch, _ int) []byte {
-			return batch.ResumeToken
+			return batch.PostBatchResumeToken
 		},
 	)
 
@@ -512,7 +516,7 @@ func (pcs *ParallelChangeStream) setResumeTokenWhenEmpty() {
 	nextTokenIdx := lo.MinBy(
 		lo.Range(len(tokens)),
 		func(a, b int) bool {
-			return cmp.Compare(tokenData[a], tokenData[b]) < 0
+			return tokenData[a] < tokenData[b]
 		},
 	)
 

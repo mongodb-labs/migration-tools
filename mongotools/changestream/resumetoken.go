@@ -16,7 +16,8 @@ const (
 )
 
 func getTsFromResumeToken(rt bson.Raw) (bson.Timestamp, error) {
-	// The resume token is a BSON document with a single field, "_data", whose value is a binary string.
+	// The resume token is a BSON document with a single field, "_data",
+	// whose value is a hex-encoded string.
 	dataStr, err := bsontools.RawLookup[string](rt, "_data")
 	if err != nil {
 		return bson.Timestamp{}, fmt.Errorf("parse resume token to string: %w", err)
@@ -24,16 +25,17 @@ func getTsFromResumeToken(rt bson.Raw) (bson.Timestamp, error) {
 	return getTsFromStringResumeToken(dataStr)
 }
 
-func getResumeTokenHexBytes(rt bson.Raw) ([]byte, error) {
+func getResumeTokenHexString(rt bson.Raw) (string, error) {
 	// TODO optimize
 
-	// The resume token is a BSON document with a single field, "_data", whose value is a binary string.
+	// The resume token is a BSON document with a single field, "_data",
+	// whose value is a hex-encoded string.
 	dataStr, err := bsontools.RawLookup[string](rt, "_data")
 	if err != nil {
-		return nil, fmt.Errorf("parse resume token to string: %w", err)
+		return "", fmt.Errorf("parse resume token to string: %w", err)
 	}
 
-	return []byte(dataStr), nil
+	return dataStr, nil
 }
 
 func getTsFromStringResumeToken(dataString string) (bson.Timestamp, error) {
