@@ -17,6 +17,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
+const (
+	dispatchInput = "$_id._data"
+)
+
 var (
 	errCloseCalled = fmt.Errorf("close called on ParallelChangeStream")
 )
@@ -44,7 +48,11 @@ type Options struct {
 
 	// DispatchRef identifies the field in the change event used to dispatch a
 	// given event to a stream. If not provided, the default is `$_id`.
-	DispatchRef any
+	//DispatchRef any
+
+	// BatchesBufferSize is the number of change stream batches to buffer per
+	// stream. The default is 10.
+	BatchesBufferSize int
 
 	// Options are the change stream options to use.
 	Options options.Lister[options.ChangeStreamOptions]
@@ -84,8 +92,6 @@ func NewParallel(
 		return nil, fmt.Errorf("streams (%d) must be positive", opts.Streams)
 	}
 
-	dispatchInput := cmp.Or(opts.DispatchRef, "$_id._data")
-
 	errFuture, errSetter := future.New[error]()
 	errIsSet := &atomic.Bool{}
 	setErr := func(err error) {
@@ -109,8 +115,10 @@ func NewParallel(
 		panic(fmt.Sprintf("watcher type (%T) is unexpected", watcher))
 	}
 
+	chanBufSize := cmp.Or(opts.BatchesBufferSize, 10)
+
 	for threadNum := range opts.Streams {
-		curChan := make(chan eventsBatch, 10)
+		curChan := make(chan eventsBatch, chanBufSize)
 		channels[threadNum] = curChan
 		go runChangeStreamThread(ctx, threadConfig{
 			watcher:   watcher,
