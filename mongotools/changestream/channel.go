@@ -22,7 +22,7 @@ func readEachChannelOnce[T any](ctx context.Context, chans ...<-chan T) ([]T, er
 				if !ok {
 					return fmt.Errorf("channel %d closed unexpectedly", i)
 				}
-				fmt.Printf("----- channel result: %+v\n", v)
+				//fmt.Printf("----- channel result: %+v\n", v)
 				results[i] = v
 				return nil
 			}

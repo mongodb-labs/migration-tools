@@ -323,7 +323,7 @@ func (pcs *ParallelChangeStream) next(
 		}
 	}
 
-	fmt.Printf("------ have %d nonempty channels\n", len(nextChanEvent))
+	//fmt.Printf("------ have %d nonempty channels\n", len(nextChanEvent))
 
 	if len(nextChanEvent) == 0 {
 		if blocking == blockingReturn {
@@ -331,7 +331,7 @@ func (pcs *ParallelChangeStream) next(
 			return false
 		}
 
-		fmt.Printf("------ all batches empty; fetching\n")
+		//fmt.Printf("------ all batches empty; fetching\n")
 
 		// There are no cached events, so we need to refresh all channels.
 		chansToFetch := lo.Range(len(pcs.channels))
@@ -346,7 +346,7 @@ func (pcs *ParallelChangeStream) next(
 			blocking = blockingReturn
 		}
 
-		fmt.Printf("------ refreshed all channels; calling next again\n")
+		//fmt.Printf("------ refreshed all channels; calling next again\n")
 
 		return pcs.next(ctx, blocking)
 	}
@@ -369,7 +369,7 @@ func (pcs *ParallelChangeStream) next(
 	})
 
 	returnNext := func() bool {
-		fmt.Printf("------ returning next event from channel %d\n", nextChan)
+		//fmt.Printf("------ returning next event from channel %d\n", nextChan)
 
 		pcs.current = pcs.curChanBatch[nextChan].Events[0]
 		pcs.curChanBatch[nextChan].Events = pcs.curChanBatch[nextChan].Events[1:]
@@ -401,7 +401,7 @@ func (pcs *ParallelChangeStream) next(
 
 	for i, rtData := range emptyBatchResumeTokenData {
 		if rtData < nextEventRT {
-			fmt.Printf("------ channel %d has empty batch with rtData=%v < nextEventRT=%v; must fetch\n", i, string(rtData), string(nextEventRT))
+			//fmt.Printf("------ channel %d has empty batch with rtData=%v < nextEventRT=%v; must fetch\n", i, string(rtData), string(nextEventRT))
 			chansToFetch = append(chansToFetch, i)
 		}
 	}
@@ -439,7 +439,7 @@ func (pcs *ParallelChangeStream) refreshChanBatches(
 	chansToFetch []int,
 ) error {
 	// For each indicated channel, read a batch & update curChanBatch.
-	fmt.Printf("------ refreshing channels: %v\n", chansToFetch)
+	//fmt.Printf("------ refreshing channels: %v\n", chansToFetch)
 
 	chans := lo.Map(chansToFetch, func(i int, _ int) <-chan eventsBatch {
 		return pcs.channels[i]
