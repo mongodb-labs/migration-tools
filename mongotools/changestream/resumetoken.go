@@ -13,15 +13,18 @@ const (
 	rtTimeStampType uint8 = 130
 )
 
-func getResumeTokenHexString(rt bson.Raw) (string, error) {
-	// TODO optimize
-
-	// The resume token is a BSON document with a single field, "_data",
-	// whose value is a hex-encoded string.
-	dataStr, err := bsontools.RawLookup[string](rt, "_data")
+// getResumeTokenHexBytes returns the hex string bytes of a resume token’s
+// "_data" field without allocating a string.
+func getResumeTokenHexBytes(rt bson.Raw) ([]byte, error) {
+	rv, err := rt.LookupErr("_data")
 	if err != nil {
-		return "", fmt.Errorf("parse resume token to string: %w", err)
+		return nil, fmt.Errorf("parse resume token: %w", err)
 	}
 
-	return dataStr, nil
+	b, err := bsontools.RawValueToStringBytes(rv)
+	if err != nil {
+		return nil, fmt.Errorf("parse resume token: %w", err)
+	}
+
+	return b, nil
 }

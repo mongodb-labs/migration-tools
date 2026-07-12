@@ -2,6 +2,7 @@
 package changestream
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -238,13 +239,13 @@ func (pcs *ParallelChangeStream) next(
 	// Optimize the case where each channel has events buffered:
 	nextChanEvent := make(map[int]bson.Raw, len(pcs.channels))
 
-	emptyBatchResumeTokenData := map[int]string{}
+	emptyBatchResumeTokenData := map[int][]byte{}
 
 	for i, batch := range pcs.curChanBatch {
 		if len(batch.Events) > 0 {
 			nextChanEvent[i] = batch.Events[0]
 		} else if len(batch.PostBatchResumeToken) > 0 {
-			data, err := getResumeTokenHexString(batch.PostBatchResumeToken)
+			data, err := getResumeTokenHexBytes(batch.PostBatchResumeToken)
 			if err != nil {
 				pcs.nextErr = fmt.Errorf("get resume token hex bytes for thread %d: %w", i, err)
 				pcs.canceler(pcs.nextErr)
@@ -284,19 +285,26 @@ func (pcs *ParallelChangeStream) next(
 
 	// We have at least one cached event. First identify the next among those.
 
-	var chanToken = map[int]string{}
+	var chanToken = map[int][]byte{}
 	for i, event := range nextChanEvent {
 		var err error
-		chanToken[i], err = bsontools.RawLookup[string](event, "_id", "_data")
+		rt, err := bsontools.RawLookup[bson.Raw](event, "_id")
 		if err != nil {
-			pcs.nextErr = fmt.Errorf("lookup resume token data for thread %d: %w", i, err)
+			pcs.nextErr = fmt.Errorf("extract event’s resume token in thread %d: %w", i, err)
+			pcs.canceler(pcs.nextErr)
+			return false
+		}
+
+		chanToken[i], err = getResumeTokenHexBytes(rt)
+		if err != nil {
+			pcs.nextErr = fmt.Errorf("extract resume token’s data in thread %d: %w", i, err)
 			pcs.canceler(pcs.nextErr)
 			return false
 		}
 	}
 
 	nextChan := lo.MinBy(lo.Keys(nextChanEvent), func(i, j int) bool {
-		return chanToken[i] < chanToken[j]
+		return bytes.Compare(chanToken[i], chanToken[j]) < 0
 	})
 
 	returnNext := func() bool {
@@ -326,12 +334,12 @@ func (pcs *ParallelChangeStream) next(
 	// At least one channel has no events buffered, so we need to check if any of
 	// those channels could have events earlier than the current best candidate.
 	// If so, we need to block until we can get the next event from those channels.
-	nextEventRT := chanToken[nextChan]
+	nextEventRT := []byte(chanToken[nextChan])
 
 	var chansToFetch []int
 
 	for i, rtData := range emptyBatchResumeTokenData {
-		if rtData < nextEventRT {
+		if bytes.Compare(rtData, nextEventRT) < 0 {
 			//fmt.Printf("------ channel %d has empty batch with rtData=%v < nextEventRT=%v; must fetch\n", i, string(rtData), string(nextEventRT))
 			chansToFetch = append(chansToFetch, i)
 		}
@@ -402,12 +410,12 @@ func (pcs *ParallelChangeStream) setResumeTokenWhenEmpty() {
 		},
 	)
 
-	tokenData := make([]string, 0, len(tokens))
+	tokenData := make([][]byte, 0, len(tokens))
 
 	for _, token := range tokens {
-		tokenD, err := bsontools.RawLookup[string](token, "_data")
+		tokenD, err := getResumeTokenHexBytes(token)
 		if err != nil {
-			pcs.nextErr = fmt.Errorf("lookup resume token: %w", err)
+			pcs.nextErr = fmt.Errorf("lookup resume token data: %w", err)
 			pcs.canceler(pcs.nextErr)
 			return
 		}
@@ -418,7 +426,7 @@ func (pcs *ParallelChangeStream) setResumeTokenWhenEmpty() {
 	nextTokenIdx := lo.MinBy(
 		lo.Range(len(tokens)),
 		func(a, b int) bool {
-			return tokenData[a] < tokenData[b]
+			return bytes.Compare(tokenData[a], tokenData[b]) < 0
 		},
 	)
 
