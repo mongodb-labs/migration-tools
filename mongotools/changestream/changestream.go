@@ -26,10 +26,11 @@ var (
 	errCloseCalled = fmt.Errorf("close called on ParallelChangeStream")
 )
 
-// ParallelChangeStream runs multiple change streams in parallel and merges
+// Parallel runs multiple change streams in parallel and merges
 // their results into a single stream. Change event order is preserved, and
-// causally-consistent sessions are updated accordingly.
-type ParallelChangeStream struct {
+// causally-consistent sessions are updated accordingly. In many (most?)
+// applications this is almost a drop-in replacement for mongo.ChangeStream.
+type Parallel struct {
 	channels     []chan eventsBatch
 	curChanBatch []eventsBatch
 	errFuture    *future.Future[error]
@@ -39,7 +40,7 @@ type ParallelChangeStream struct {
 	canceler     context.CancelCauseFunc
 }
 
-// Options are the options for creating a ParallelChangeStream.
+// Options are the options for creating a Parallel.
 type Options struct {
 	// Streams is the number of parallel change streams to use.
 	Streams int
@@ -79,12 +80,12 @@ type eventsBatch struct {
 	PostBatchResumeToken bson.Raw
 }
 
-// NewParallel creates a new ParallelChangeStream.
+// NewParallel creates a new Parallel.
 func NewParallel(
 	ctxIn context.Context,
 	watcher Watcher,
 	opts Options,
-) (*ParallelChangeStream, error) {
+) (*Parallel, error) {
 	if opts.Streams <= 0 {
 		return nil, fmt.Errorf("streams (%d) must be positive", opts.Streams)
 	}
@@ -133,7 +134,7 @@ func NewParallel(
 		})
 	}
 
-	return &ParallelChangeStream{
+	return &Parallel{
 		channels:     channels,
 		curChanBatch: make([]eventsBatch, opts.Streams),
 		errFuture:    errFuture,
@@ -171,31 +172,31 @@ func createPipeline(
 
 // Next iterates the change stream. It blocks until the next change event is
 // available, an error occurs, or the change stream is closed.
-func (pcs *ParallelChangeStream) Next(ctx context.Context) bool {
+func (pcs *Parallel) Next(ctx context.Context) bool {
 	return pcs.next(ctx, blockingForever)
 }
 
 // TryNext is like Next, but it will only block long enough to send a single
 // `getMore` request to the server. If that response contains no events, this
 // returns false.
-func (pcs *ParallelChangeStream) TryNext(ctx context.Context) bool {
+func (pcs *Parallel) TryNext(ctx context.Context) bool {
 	return pcs.next(ctx, blockingOnce)
 }
 
 // Current returns the current change event.
-func (pcs *ParallelChangeStream) Current() bson.Raw {
+func (pcs *Parallel) Current() bson.Raw {
 	return pcs.current
 }
 
 // Close closes the change stream. It is safe to call Close multiple times.
-func (pcs *ParallelChangeStream) Close() {
+func (pcs *Parallel) Close() {
 	pcs.canceler(errCloseCalled)
 }
 
 // Err returns whatever error, if any, happened while iterating the change
 // stream. This may include errors from the underlying streams, from the
 // “top-level” stream, or both.
-func (pcs *ParallelChangeStream) Err() error {
+func (pcs *Parallel) Err() error {
 	nextErr := pcs.nextErr
 
 	var threadErr error
@@ -218,7 +219,7 @@ func (pcs *ParallelChangeStream) Err() error {
 	return threadErr
 }
 
-func (pcs *ParallelChangeStream) ResumeToken() bson.Raw {
+func (pcs *Parallel) ResumeToken() bson.Raw {
 	return pcs.resumeToken
 }
 
@@ -230,7 +231,7 @@ const (
 	blockingForever = 2
 )
 
-func (pcs *ParallelChangeStream) next(
+func (pcs *Parallel) next(
 	ctx context.Context,
 	blocking blockingType,
 ) bool {
@@ -373,7 +374,7 @@ func (pcs *ParallelChangeStream) next(
 	return pcs.next(ctx, blocking)
 }
 
-func (pcs *ParallelChangeStream) refreshChanBatches(
+func (pcs *Parallel) refreshChanBatches(
 	ctx context.Context,
 	chansToFetch []int,
 ) error {
@@ -396,7 +397,7 @@ func (pcs *ParallelChangeStream) refreshChanBatches(
 	return nil
 }
 
-func (pcs *ParallelChangeStream) setResumeTokenWhenEmpty() {
+func (pcs *Parallel) setResumeTokenWhenEmpty() {
 	// Iterate the current batches and find the minimum resume token. Then
 	// set that as the PCS’s resume token.
 	//

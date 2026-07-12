@@ -198,7 +198,6 @@ func TestIntegration_EventOrdering(t *testing.T) {
 
 			for len(pcsEvents) < len(plainEvents) {
 				if pcs.TryNext(ctx) {
-					fmt.Printf("----- pcs event: %+v\n", pcs.Current())
 					pcsEvents = append(pcsEvents, pcs.Current())
 				}
 				require.NoError(t, pcs.Err(), "Next() must not return an error")
@@ -280,7 +279,7 @@ func drainChangeStream(
 func drainParallelChangeStream(
 	ctx context.Context,
 	t *testing.T,
-	pcs *ParallelChangeStream,
+	pcs *Parallel,
 	until func(bson.Raw) bool,
 ) []bson.Raw {
 	t.Helper()
