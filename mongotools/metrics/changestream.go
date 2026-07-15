@@ -39,9 +39,10 @@ func NewChangeStreamMetrics[T constraints.Integer](
 	}
 }
 
-// Add adds a new event to the metrics. Pass the event’s clusterTime.T.
-func (m *ChangeStreamMetrics[T]) Add(clusterTimeT T) error {
-	if err := m.clusterWrite.update(clusterTimeT, "clusterTime.T"); err != nil {
+// Add adds a new event to the metrics. Pass a monotonically non-decreasing
+// key representing the event's server time (e.g. wallTime or clusterTime.T).
+func (m *ChangeStreamMetrics[T]) Add(serverTimeKey T) error {
+	if err := m.clusterWrite.update(serverTimeKey, "serverTimeKey"); err != nil {
 		return err
 	}
 
