@@ -7,32 +7,38 @@ import (
 
 	"github.com/mongodb-labs/migration-tools/metrics"
 	"github.com/mongodb-labs/migration-tools/option"
+	"golang.org/x/exp/constraints"
 )
 
 // ChangeStreamMetrics tracks metrics for a change stream. It is *not*
 // thread-safe, so use it only from a single goroutine.
-type ChangeStreamMetrics struct {
-	lastClusterTimeT    uint32
+type ChangeStreamMetrics[T constraints.Integer] struct {
+	lastClusterTimeT    T
 	curClusterTimeCount int
-	lastWallSecond      int64
-	curWallSecondCount  int
+	clusterWriteTracker *metrics.RateTracker[T, int]
 
-	readTracker         *metrics.RateTracker[int64, int]
-	clusterWriteTracker *metrics.RateTracker[uint32, int]
+	lastWallSecond     int64
+	curWallSecondCount int
+	readTracker        *metrics.RateTracker[int64, int]
 }
 
 // NewChangeStreamMetrics creates a new ChangeStreamMetrics that computes
 // metrics over the given duration. The duration must be at least 1 second.
-func NewChangeStreamMetrics(
+//
+// The type parameter is the type of whatever you’re using to track server time.
+// You should probably use the wallTime, which makes int64 a good choice.
+// You could alternatively use the clusterTime.T, which would be uint32.
+func NewChangeStreamMetrics[T constraints.Integer](
 	duration time.Duration,
-) *ChangeStreamMetrics {
-	return &ChangeStreamMetrics{
+) *ChangeStreamMetrics[T] {
+	return &ChangeStreamMetrics[T]{
 		readTracker:         metrics.NewRateTracker[int64, int](duration),
-		clusterWriteTracker: metrics.NewRateTracker[uint32, int](duration),
+		clusterWriteTracker: metrics.NewRateTracker[T, int](duration),
 	}
 }
 
-func (m *ChangeStreamMetrics) Add(clusterTimeT uint32) error {
+// Add adds a new event to the metrics. Pass the event’s clusterTime.T.
+func (m *ChangeStreamMetrics[T]) Add(clusterTimeT T) error {
 	if err := trackBucket(clusterTimeT, &m.lastClusterTimeT, &m.curClusterTimeCount, m.clusterWriteTracker.Add, "clusterTime.T"); err != nil {
 		return err
 	}
@@ -68,10 +74,10 @@ func trackBucket[T cmp.Ordered](
 	return nil
 }
 
-func (m *ChangeStreamMetrics) EventsReadPerSecond() option.Option[float64] {
+func (m *ChangeStreamMetrics[T]) EventsReadPerSecond() option.Option[float64] {
 	return m.readTracker.Average()
 }
 
-func (m *ChangeStreamMetrics) ClusterEventsPerSecond() option.Option[float64] {
+func (m *ChangeStreamMetrics[T]) ClusterEventsPerSecond() option.Option[float64] {
 	return m.clusterWriteTracker.Average()
 }
