@@ -33,47 +33,36 @@ func NewChangeStreamMetrics(
 }
 
 func (m *ChangeStreamMetrics) Add(clusterTimeT uint32) error {
-	if m.lastClusterTimeT == 0 {
-		m.lastClusterTimeT = clusterTimeT
+	if err := trackBucket(clusterTimeT, &m.lastClusterTimeT, &m.curClusterTimeCount, m.clusterWriteTracker.Add, "clusterTime.T"); err != nil {
+		return err
+	}
+	return trackBucket(time.Now().Unix(), &m.lastWallSecond, &m.curWallSecondCount, m.readTracker.Add, "wallSecond")
+}
+
+func trackBucket[T cmp.Ordered](
+	current T,
+	last *T,
+	count *int,
+	add func(T, int) error,
+	label string,
+) error {
+	var zero T
+
+	if *last == zero {
+		*last = current
 	}
 
-	switch cmp.Compare(clusterTimeT, m.lastClusterTimeT) {
+	switch cmp.Compare(current, *last) {
 	case 0:
-		m.curClusterTimeCount++
+		*count++
 	case 1:
-		if err := m.clusterWriteTracker.Add(m.lastClusterTimeT, m.curClusterTimeCount); err != nil {
+		if err := add(*last, *count); err != nil {
 			return err
 		}
-		m.lastClusterTimeT = clusterTimeT
-		m.curClusterTimeCount = 1
+		*last = current
+		*count = 1
 	default:
-		return fmt.Errorf(
-			"clusterTime.T (%d) precedes most recent clusterTime.T (%d)",
-			clusterTimeT,
-			m.lastClusterTimeT,
-		)
-	}
-
-	wallSecond := time.Now().Unix()
-	if m.lastWallSecond == 0 {
-		m.lastWallSecond = wallSecond
-	}
-
-	switch cmp.Compare(wallSecond, m.lastWallSecond) {
-	case 0:
-		m.curWallSecondCount++
-	case 1:
-		if err := m.readTracker.Add(m.lastWallSecond, m.curWallSecondCount); err != nil {
-			return err
-		}
-		m.lastWallSecond = wallSecond
-		m.curWallSecondCount = 1
-	default:
-		return fmt.Errorf(
-			"wallSecond (%d) precedes most recent wallSecond (%d)",
-			wallSecond,
-			m.lastWallSecond,
-		)
+		return fmt.Errorf("%s (%v) precedes most recent %s (%v)", label, current, label, *last)
 	}
 
 	return nil
