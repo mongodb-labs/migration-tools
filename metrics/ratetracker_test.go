@@ -72,6 +72,20 @@ func TestRateTracker_GapNoConsecutiveKeys(t *testing.T) {
 	assert.Equal(t, 3.6, avg)
 }
 
+func TestRateTracker_GapExceedsWindow(t *testing.T) {
+	// Window is 3 seconds. A gap larger than the window must not let an old
+	// entry stretch the span beyond the window size.
+	rt := NewRateTracker[int64, int](3 * time.Second)
+	require.NoError(t, rt.Set(1, 50)) // will fall outside the window once key 5 arrives
+	require.NoError(t, rt.Set(5, 10))
+
+	avg, ok := avgBefore(t, rt, 6)
+	require.True(t, ok)
+	// effectiveOldest = 6-3 = 3; key 1 < 3 is excluded.
+	// Only key 5 (count=10) remains; span = 6-5 = 1.
+	assert.Equal(t, 10.0, avg)
+}
+
 func TestRateTracker_PrecedingKeyErrors(t *testing.T) {
 	rt := NewRateTracker[int64, int](time.Minute)
 	require.NoError(t, rt.Set(5, 1))

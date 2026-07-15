@@ -111,15 +111,30 @@ func (c *RateTracker[keyT, countT]) AverageBefore(excLimit keyT) (option.Option[
 		)
 	}
 
+	// Entries older than this key are outside the window and must be excluded.
+	// Guard against underflow for unsigned keyT when excLimit < c.size.
+	var effectiveOldest keyT
+	if excLimit >= c.size {
+		effectiveOldest = excLimit - c.size
+	}
+
 	var sum countT
 	var oldestKey keyT
+	var included keyT
 	r := c.ring
 
 	for i := keyT(0); i < c.filled; i++ {
 		b := typeAssert[*bucket[keyT, countT]](r.Value)
-		sum += b.count
-		oldestKey = b.key
+		if b.key >= effectiveOldest {
+			sum += b.count
+			oldestKey = b.key // ring goes newest→oldest; final value is the oldest included
+			included++
+		}
 		r = r.Prev()
+	}
+
+	if included == 0 {
+		return option.None[float64](), nil
 	}
 
 	span := excLimit - oldestKey
