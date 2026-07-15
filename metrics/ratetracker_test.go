@@ -86,7 +86,7 @@ func TestRateTracker_GapExceedsWindow(t *testing.T) {
 	assert.Equal(t, 10.0, avg)
 }
 
-func TestRateTracker_PrecedingKeyErrors(t *testing.T) {
+func TestRateTracker_PrecedingKey(t *testing.T) {
 	rt := NewRateTracker[int64, int](time.Minute)
 	require.NoError(t, rt.Set(5, 1))
 	require.Error(t, rt.Set(4, 1), "Set() with a key before the last should return an error")
