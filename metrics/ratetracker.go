@@ -97,11 +97,11 @@ func (c *RateTracker[keyT, countT]) Average() option.Option[float64] {
 		return option.None[float64]()
 	}
 
-	var sum countT
-	r := c.ring.Prev() // skip the current (incomplete) bucket
+	currentKey := c.ring.Value.(*bucket[keyT, countT]).key
 
-	newestKey := r.Value.(*bucket[keyT, countT]).key
+	var sum countT
 	var oldestKey keyT
+	r := c.ring.Prev() // skip the current (incomplete) bucket
 
 	for i := keyT(0); i < c.filled-1; i++ {
 		b := r.Value.(*bucket[keyT, countT])
@@ -110,7 +110,9 @@ func (c *RateTracker[keyT, countT]) Average() option.Option[float64] {
 		r = r.Prev()
 	}
 
-	// Divide by the key span (inclusive) to treat gaps as zero-count keys.
-	span := newestKey - oldestKey + 1
+	// Divide by the span from the oldest complete key up to (not including) the
+	// current key, so gaps — including any trailing gap before the current key —
+	// are treated as zero-count keys.
+	span := currentKey - oldestKey
 	return option.Some(float64(sum) / float64(span))
 }
