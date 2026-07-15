@@ -68,7 +68,8 @@ func (c *RateTracker[keyT, countT]) Set(key keyT, count countT) error {
 	if c.hasKey {
 		switch cmp.Compare(key, c.lastKey) {
 		case 0:
-			c.ring.Value.(*bucket[keyT, countT]).count = count
+			typeAssert[*bucket[keyT, countT]](c.ring.Value).count = count
+
 			return nil
 		case -1:
 			return fmt.Errorf(
@@ -102,7 +103,7 @@ func (c *RateTracker[keyT, countT]) AverageBefore(excLimit keyT) (option.Option[
 		return option.None[float64](), nil
 	}
 
-	newestKey := c.ring.Value.(*bucket[keyT, countT]).key
+	newestKey := typeAssert[*bucket[keyT, countT]](c.ring.Value).key
 	if excLimit <= newestKey {
 		return option.None[float64](), fmt.Errorf(
 			"excLimit (%v) must be strictly greater than newest key (%v)",
@@ -115,7 +116,7 @@ func (c *RateTracker[keyT, countT]) AverageBefore(excLimit keyT) (option.Option[
 	r := c.ring
 
 	for i := keyT(0); i < c.filled; i++ {
-		b := r.Value.(*bucket[keyT, countT])
+		b := typeAssert[*bucket[keyT, countT]](r.Value)
 		sum += b.count
 		oldestKey = b.key
 		r = r.Prev()
@@ -123,4 +124,15 @@ func (c *RateTracker[keyT, countT]) AverageBefore(excLimit keyT) (option.Option[
 
 	span := excLimit - oldestKey
 	return option.Some(float64(sum) / float64(span)), nil
+}
+
+func typeAssert[T any](v any) T {
+	t, ok := v.(T)
+
+	// avoid an allocation
+	if !ok {
+		lo.Assertf(false, "need type %T but got %T", t, v)
+	}
+
+	return t
 }
