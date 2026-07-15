@@ -36,7 +36,9 @@ type bucket[keyT, countT constraints.Integer] struct {
 
 // NewRateTracker creates a new RateTracker over the given duration.
 // The duration must be at least 1 second.
-func NewRateTracker[keyT, countT constraints.Integer](duration time.Duration) *RateTracker[keyT, countT] {
+func NewRateTracker[keyT, countT constraints.Integer](
+	duration time.Duration,
+) *RateTracker[keyT, countT] {
 	lo.Assertf(
 		duration >= time.Second,
 		"duration (%s) must be at least 1 second",
