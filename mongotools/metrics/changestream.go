@@ -25,6 +25,10 @@ type metricSet[keyT constraints.Integer] struct {
 }
 
 func (ms *metricSet[keyT]) update(newKey keyT, label string) error {
+	if newKey == 0 {
+		return fmt.Errorf("zero key given for %#q, which is invalid", label)
+	}
+
 	var zero keyT
 
 	if ms.lastKey == zero {
