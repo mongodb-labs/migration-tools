@@ -87,41 +87,31 @@ func (c *RateTracker[keyT, countT]) Set(key keyT, count countT) error {
 	return nil
 }
 
-// AverageUpTo is like Average but uses exclusiveUpperBound as the upper end of
-// the span, allowing the caller to account for trailing gaps between the newest
-// recorded key and a known in-progress key. If exclusiveUpperBound does not
-// extend beyond newestKey+1, newestKey+1 is used instead.
-func (c *RateTracker[keyT, countT]) AverageUpTo(exclusiveUpperBound keyT) option.Option[float64] {
+// AverageBefore computes the average number of events per key from the first
+// key to the given exclusive limit. This lets you account for gaps in the keys.
+//
+// For example, if you have keys 1 and 3, and you call AverageBefore(5),
+// the average will be (count1 + count3) / 4, because keys 2 and 4 are gaps.
+func (c *RateTracker[keyT, countT]) AverageBefore(excLimit keyT) option.Option[float64] {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	return c.averageUpTo(exclusiveUpperBound)
-}
-
-func (c *RateTracker[keyT, countT]) averageUpTo(exclusiveUpperBound keyT) option.Option[float64] {
 	if c.filled == 0 {
 		return option.None[float64]()
 	}
 
 	var sum countT
-	var newestKey, oldestKey keyT
+	var oldestKey keyT
 	r := c.ring
 
 	for i := keyT(0); i < c.filled; i++ {
 		b := r.Value.(*bucket[keyT, countT])
 		sum += b.count
-		if i == 0 {
-			newestKey = b.key
-		}
+
 		oldestKey = b.key
 		r = r.Prev()
 	}
 
-	upperBound := newestKey + 1
-	if exclusiveUpperBound > upperBound {
-		upperBound = exclusiveUpperBound
-	}
-
-	span := upperBound - oldestKey
+	span := excLimit - oldestKey
 	return option.Some(float64(sum) / float64(span))
 }
