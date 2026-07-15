@@ -87,16 +87,18 @@ func (c *RateTracker[keyT, countT]) Set(key keyT, count countT) error {
 	return nil
 }
 
-// Average returns the average number of events per key given to Set().
-// The average is computed over the span of keys, including gaps.
-// For example, if Set() was called with keys 1 and 3, the average is
-// (count1 + count3) / 3.
-//
-//	If no keys have been set, it returns None.
-func (c *RateTracker[keyT, countT]) Average() option.Option[float64] {
+// AverageUpTo is like Average but uses exclusiveUpperBound as the upper end of
+// the span, allowing the caller to account for trailing gaps between the newest
+// recorded key and a known in-progress key. If exclusiveUpperBound does not
+// extend beyond newestKey+1, newestKey+1 is used instead.
+func (c *RateTracker[keyT, countT]) AverageUpTo(exclusiveUpperBound keyT) option.Option[float64] {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	return c.averageUpTo(exclusiveUpperBound)
+}
+
+func (c *RateTracker[keyT, countT]) averageUpTo(exclusiveUpperBound keyT) option.Option[float64] {
 	if c.filled == 0 {
 		return option.None[float64]()
 	}
@@ -115,6 +117,11 @@ func (c *RateTracker[keyT, countT]) Average() option.Option[float64] {
 		r = r.Prev()
 	}
 
-	span := newestKey - oldestKey + 1
+	upperBound := newestKey + 1
+	if exclusiveUpperBound > upperBound {
+		upperBound = exclusiveUpperBound
+	}
+
+	span := upperBound - oldestKey
 	return option.Some(float64(sum) / float64(span))
 }

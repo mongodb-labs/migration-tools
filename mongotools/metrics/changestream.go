@@ -24,6 +24,41 @@ type metricSet[keyT constraints.Integer] struct {
 	rateTracker *metrics.RateTracker[keyT, int]
 }
 
+// NewChangeStreamMetrics creates a new ChangeStreamMetrics that computes
+// metrics over the given duration. The duration must be at least 1 second.
+//
+// The type parameter is the type of whatever you’re using to track server time.
+// You should probably use the wallTime, which makes int64 a good choice.
+// You could alternatively use the clusterTime.T, which would be uint32.
+func NewChangeStreamMetrics[T constraints.Integer](
+	duration time.Duration,
+) *ChangeStreamMetrics[T] {
+	return &ChangeStreamMetrics[T]{
+		read:         metricSet[int64]{rateTracker: metrics.NewRateTracker[int64, int](duration)},
+		clusterWrite: metricSet[T]{rateTracker: metrics.NewRateTracker[T, int](duration)},
+	}
+}
+
+// Add adds a new event to the metrics. Pass the event’s clusterTime.T.
+func (m *ChangeStreamMetrics[T]) Add(clusterTimeT T) error {
+	if err := m.clusterWrite.update(clusterTimeT, "clusterTime.T"); err != nil {
+		return err
+	}
+	return m.read.update(time.Now().Unix(), "wallSecond")
+}
+
+func (m *ChangeStreamMetrics[T]) EventsReadPerSecond() option.Option[float64] {
+	return m.read.average()
+}
+
+func (m *ChangeStreamMetrics[T]) ClusterEventsPerSecond() option.Option[float64] {
+	return m.clusterWrite.average()
+}
+
+func (ms *metricSet[keyT]) average() option.Option[float64] {
+	return ms.rateTracker.AverageUpTo(ms.lastKey)
+}
+
 func (ms *metricSet[keyT]) update(newKey keyT, label string) error {
 	if newKey == 0 {
 		return fmt.Errorf("zero key given for %#q, which is invalid", label)
@@ -55,35 +90,4 @@ func (ms *metricSet[keyT]) update(newKey keyT, label string) error {
 	}
 
 	return nil
-}
-
-// NewChangeStreamMetrics creates a new ChangeStreamMetrics that computes
-// metrics over the given duration. The duration must be at least 1 second.
-//
-// The type parameter is the type of whatever you’re using to track server time.
-// You should probably use the wallTime, which makes int64 a good choice.
-// You could alternatively use the clusterTime.T, which would be uint32.
-func NewChangeStreamMetrics[T constraints.Integer](
-	duration time.Duration,
-) *ChangeStreamMetrics[T] {
-	return &ChangeStreamMetrics[T]{
-		read:         metricSet[int64]{rateTracker: metrics.NewRateTracker[int64, int](duration)},
-		clusterWrite: metricSet[T]{rateTracker: metrics.NewRateTracker[T, int](duration)},
-	}
-}
-
-// Add adds a new event to the metrics. Pass the event’s clusterTime.T.
-func (m *ChangeStreamMetrics[T]) Add(clusterTimeT T) error {
-	if err := m.clusterWrite.update(clusterTimeT, "clusterTime.T"); err != nil {
-		return err
-	}
-	return m.read.update(time.Now().Unix(), "wallSecond")
-}
-
-func (m *ChangeStreamMetrics[T]) EventsReadPerSecond() option.Option[float64] {
-	return m.read.rateTracker.Average()
-}
-
-func (m *ChangeStreamMetrics[T]) ClusterEventsPerSecond() option.Option[float64] {
-	return m.clusterWrite.rateTracker.Average()
 }
