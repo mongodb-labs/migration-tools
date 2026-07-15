@@ -56,7 +56,11 @@ func (m *ChangeStreamMetrics[T]) ClusterEventsPerSecond() option.Option[float64]
 }
 
 func (ms *metricSet[keyT]) average() option.Option[float64] {
-	return ms.rateTracker.AverageBefore(ms.lastKey)
+	avg, err := ms.rateTracker.AverageBefore(ms.lastKey)
+	if err != nil {
+		panic(err)
+	}
+	return avg
 }
 
 func (ms *metricSet[keyT]) update(newKey keyT, label string) error {

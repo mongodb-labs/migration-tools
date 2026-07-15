@@ -92,12 +92,20 @@ func (c *RateTracker[keyT, countT]) Set(key keyT, count countT) error {
 //
 // For example, if you have keys 1 and 3, and you call AverageBefore(5),
 // the average will be (count1 + count3) / 4, because keys 2 and 4 are gaps.
-func (c *RateTracker[keyT, countT]) AverageBefore(excLimit keyT) option.Option[float64] {
+func (c *RateTracker[keyT, countT]) AverageBefore(excLimit keyT) (option.Option[float64], error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.filled == 0 {
-		return option.None[float64]()
+		return option.None[float64](), nil
+	}
+
+	newestKey := c.ring.Value.(*bucket[keyT, countT]).key
+	if excLimit <= newestKey {
+		return option.None[float64](), fmt.Errorf(
+			"excLimit (%v) must be strictly greater than newest key (%v)",
+			excLimit, newestKey,
+		)
 	}
 
 	var sum countT
@@ -107,11 +115,10 @@ func (c *RateTracker[keyT, countT]) AverageBefore(excLimit keyT) option.Option[f
 	for i := keyT(0); i < c.filled; i++ {
 		b := r.Value.(*bucket[keyT, countT])
 		sum += b.count
-
 		oldestKey = b.key
 		r = r.Prev()
 	}
 
 	span := excLimit - oldestKey
-	return option.Some(float64(sum) / float64(span))
+	return option.Some(float64(sum) / float64(span)), nil
 }
