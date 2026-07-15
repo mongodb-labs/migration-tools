@@ -81,7 +81,7 @@ func (c *RateTracker[keyT, countT]) Set(key keyT, count countT) error {
 	}
 
 	c.ring = c.ring.Next()
-	b := c.ring.Value.(*bucket[keyT, countT])
+	b := typeAssert[*bucket[keyT, countT]](c.ring.Value)
 	b.key = key
 	b.count = count
 	c.lastKey = key
