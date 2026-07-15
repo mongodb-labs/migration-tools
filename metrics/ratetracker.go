@@ -54,7 +54,8 @@ func NewRateTracker[keyT, countT constraints.Integer](duration time.Duration) *R
 }
 
 // Add adds the given number of events for keyT.
-// It takes a lock, so callers should not call it too often.
+// It takes a lock, so over-frequent calls will cause contention across
+// goroutines. So don’t do that.
 //
 // Returns an error if the given key precedes the most recent one.
 func (c *RateTracker[keyT, countT]) Add(key keyT, count countT) error {
@@ -86,21 +87,30 @@ func (c *RateTracker[keyT, countT]) Add(key keyT, count countT) error {
 }
 
 // Average returns the average number of events per key given to Add(),
-// or empty if no events have been recorded.
+// excluding the current (likely incomplete) key. If there are fewer than 2
+// distinct keys, it returns None.
 func (c *RateTracker[keyT, countT]) Average() option.Option[float64] {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.filled == 0 {
+	if c.filled < 2 {
 		return option.None[float64]()
 	}
 
 	var sum countT
-	r := c.ring
+	r := c.ring.Prev() // skip the current (incomplete) bucket
 
-	for i := keyT(0); i < c.filled; i++ {
-		sum += r.Value.(*bucket[keyT, countT]).count
+	newestKey := r.Value.(*bucket[keyT, countT]).key
+	var oldestKey keyT
+
+	for i := keyT(0); i < c.filled-1; i++ {
+		b := r.Value.(*bucket[keyT, countT])
+		sum += b.count
+		oldestKey = b.key
 		r = r.Prev()
 	}
-	return option.Some(float64(sum) / float64(c.filled))
+
+	// Divide by the key span (inclusive) to treat gaps as zero-count keys.
+	span := newestKey - oldestKey + 1
+	return option.Some(float64(sum) / float64(span))
 }

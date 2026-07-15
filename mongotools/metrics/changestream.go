@@ -56,6 +56,8 @@ func trackBucket[T cmp.Ordered](
 
 	if *last == zero {
 		*last = current
+		*count = 1
+		return nil
 	}
 
 	switch cmp.Compare(current, *last) {
