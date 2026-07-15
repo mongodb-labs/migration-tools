@@ -53,19 +53,20 @@ func NewRateTracker[keyT, countT constraints.Integer](duration time.Duration) *R
 	return &RateTracker[keyT, countT]{ring: r, size: safecast.MustConvert[keyT](size)}
 }
 
-// Add adds the given number of events for keyT.
+// Set sets the count for key. If the key matches the most recent one, its
+// count is replaced. If the key advances, the ring moves forward.
 // It takes a lock, so over-frequent calls will cause contention across
 // goroutines. So don’t do that.
 //
 // Returns an error if the given key precedes the most recent one.
-func (c *RateTracker[keyT, countT]) Add(key keyT, count countT) error {
+func (c *RateTracker[keyT, countT]) Set(key keyT, count countT) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.hasKey {
 		switch cmp.Compare(key, c.lastKey) {
 		case 0:
-			c.ring.Value.(*bucket[keyT, countT]).count += count
+			c.ring.Value.(*bucket[keyT, countT]).count = count
 			return nil
 		case -1:
 			return fmt.Errorf(
@@ -86,33 +87,34 @@ func (c *RateTracker[keyT, countT]) Add(key keyT, count countT) error {
 	return nil
 }
 
-// Average returns the average number of events per key given to Add(),
-// excluding the current (likely incomplete) key. If there are fewer than 2
-// distinct keys, it returns None.
+// Average returns the average number of events per key given to Set().
+// The average is computed over the span of keys, including gaps.
+// For example, if Set() was called with keys 1 and 3, the average is
+// (count1 + count3) / 3.
+//
+//	If no keys have been set, it returns None.
 func (c *RateTracker[keyT, countT]) Average() option.Option[float64] {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.filled < 2 {
+	if c.filled == 0 {
 		return option.None[float64]()
 	}
 
-	currentKey := c.ring.Value.(*bucket[keyT, countT]).key
-
 	var sum countT
-	var oldestKey keyT
-	r := c.ring.Prev() // skip the current (incomplete) bucket
+	var newestKey, oldestKey keyT
+	r := c.ring
 
-	for i := keyT(0); i < c.filled-1; i++ {
+	for i := keyT(0); i < c.filled; i++ {
 		b := r.Value.(*bucket[keyT, countT])
 		sum += b.count
+		if i == 0 {
+			newestKey = b.key
+		}
 		oldestKey = b.key
 		r = r.Prev()
 	}
 
-	// Divide by the span from the oldest complete key up to (not including) the
-	// current key, so gaps — including any trailing gap before the current key —
-	// are treated as zero-count keys.
-	span := currentKey - oldestKey
+	span := newestKey - oldestKey + 1
 	return option.Some(float64(sum) / float64(span))
 }

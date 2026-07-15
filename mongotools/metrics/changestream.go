@@ -13,13 +13,44 @@ import (
 // ChangeStreamMetrics tracks metrics for a change stream. It is *not*
 // thread-safe, so use it only from a single goroutine.
 type ChangeStreamMetrics[T constraints.Integer] struct {
-	lastClusterTimeT    T
-	curClusterTimeCount int
-	clusterWriteTracker *metrics.RateTracker[T, int]
+	clusterWrite metricSet[T]
+	read         metricSet[int64]
+}
 
-	lastWallSecond     int64
-	curWallSecondCount int
-	readTracker        *metrics.RateTracker[int64, int]
+type metricSet[keyT constraints.Integer] struct {
+	lastKey     keyT
+	curKeyCount int
+	firstDone   bool
+	rateTracker *metrics.RateTracker[keyT, int]
+}
+
+func (ms *metricSet[keyT]) update(newKey keyT, label string) error {
+	var zero keyT
+
+	if ms.lastKey == zero {
+		ms.lastKey = newKey
+		ms.curKeyCount = 1
+		return nil
+	}
+
+	switch cmp.Compare(newKey, ms.lastKey) {
+	case 0:
+		ms.curKeyCount++
+	case 1:
+		if ms.firstDone {
+			if err := ms.rateTracker.Set(ms.lastKey, ms.curKeyCount); err != nil {
+				return err
+			}
+		} else {
+			ms.firstDone = true
+		}
+		ms.lastKey = newKey
+		ms.curKeyCount = 1
+	default:
+		return fmt.Errorf("%s (%v) precedes most recent %s (%v)", label, newKey, label, ms.lastKey)
+	}
+
+	return nil
 }
 
 // NewChangeStreamMetrics creates a new ChangeStreamMetrics that computes
@@ -32,54 +63,23 @@ func NewChangeStreamMetrics[T constraints.Integer](
 	duration time.Duration,
 ) *ChangeStreamMetrics[T] {
 	return &ChangeStreamMetrics[T]{
-		readTracker:         metrics.NewRateTracker[int64, int](duration),
-		clusterWriteTracker: metrics.NewRateTracker[T, int](duration),
+		read:         metricSet[int64]{rateTracker: metrics.NewRateTracker[int64, int](duration)},
+		clusterWrite: metricSet[T]{rateTracker: metrics.NewRateTracker[T, int](duration)},
 	}
 }
 
 // Add adds a new event to the metrics. Pass the event’s clusterTime.T.
 func (m *ChangeStreamMetrics[T]) Add(clusterTimeT T) error {
-	if err := trackBucket(clusterTimeT, &m.lastClusterTimeT, &m.curClusterTimeCount, m.clusterWriteTracker.Add, "clusterTime.T"); err != nil {
+	if err := m.clusterWrite.update(clusterTimeT, "clusterTime.T"); err != nil {
 		return err
 	}
-	return trackBucket(time.Now().Unix(), &m.lastWallSecond, &m.curWallSecondCount, m.readTracker.Add, "wallSecond")
-}
-
-func trackBucket[T cmp.Ordered](
-	current T,
-	last *T,
-	count *int,
-	add func(T, int) error,
-	label string,
-) error {
-	var zero T
-
-	if *last == zero {
-		*last = current
-		*count = 1
-		return nil
-	}
-
-	switch cmp.Compare(current, *last) {
-	case 0:
-		*count++
-	case 1:
-		if err := add(*last, *count); err != nil {
-			return err
-		}
-		*last = current
-		*count = 1
-	default:
-		return fmt.Errorf("%s (%v) precedes most recent %s (%v)", label, current, label, *last)
-	}
-
-	return nil
+	return m.read.update(time.Now().Unix(), "wallSecond")
 }
 
 func (m *ChangeStreamMetrics[T]) EventsReadPerSecond() option.Option[float64] {
-	return m.readTracker.Average()
+	return m.read.rateTracker.Average()
 }
 
 func (m *ChangeStreamMetrics[T]) ClusterEventsPerSecond() option.Option[float64] {
-	return m.clusterWriteTracker.Average()
+	return m.clusterWrite.rateTracker.Average()
 }
