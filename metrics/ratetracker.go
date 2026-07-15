@@ -81,8 +81,9 @@ func (c *RateTracker[keyT, countT]) Set(key keyT, count countT) error {
 	}
 
 	c.ring = c.ring.Next()
-	c.ring.Value = &bucket[keyT, countT]{key: key, count: count}
-	c.lastKey = key
+	b := c.ring.Value.(*bucket[keyT, countT])
+	b.key = key
+	b.count = count
 	c.hasKey = true
 	if c.filled < c.size {
 		c.filled++

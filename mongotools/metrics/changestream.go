@@ -44,7 +44,12 @@ func (m *ChangeStreamMetrics[T]) Add(clusterTimeT T) error {
 	if err := m.clusterWrite.update(clusterTimeT, "clusterTime.T"); err != nil {
 		return err
 	}
-	return m.read.update(time.Now().Unix(), "wallSecond")
+
+	wallSecond := time.Now().Unix()
+	if m.read.curKeyCount != 0 && wallSecond < m.read.lastKey {
+		wallSecond = m.read.lastKey
+	}
+	return m.read.update(wallSecond, "wallSecond")
 }
 
 func (m *ChangeStreamMetrics[T]) EventsReadPerSecond() option.Option[float64] {
