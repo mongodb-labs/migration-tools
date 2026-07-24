@@ -13,6 +13,10 @@ func TestMaybeAddDirectConnection(t *testing.T) {
 			"mongodb://johndoe:password@example.com/?authSource=admin&ssl=true",
 			"mongodb://johndoe:password@example.com/?authSource=admin&ssl=true&directConnection=true",
 		},
+		{
+			"mongodb://foo:bar@ip-10-0-0-208.ec2.internal:27019/?authSource=admin",
+			"mongodb://foo:bar@ip-10-0-0-208.ec2.internal:27019/?authSource=admin&directConnection=true",
+		},
 	}
 
 	for _, cur := range cases {
