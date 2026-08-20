@@ -191,3 +191,13 @@ linters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+
+formatters:
+  enable:
+    - goimports
+    - golines
+
+  settings:
+    golines:
+      max-len: 100
+      reformat-tags: false
