@@ -30,14 +30,22 @@ ok-exit-codes = [0]
 lint-failure-exit-codes = [1]
 ignore-stderr = 'Skipped \d+ issues by rules:'
 
-[commands.goimports]
-type = "both"
-include = "**/*.go"
-invoke = "once"
-path-args = "file"
-cmd = "$PRECIOUS_ROOT/etc/goimports-wrapper.sh"
-lint-flags = "--lint"
+[commands."golangci-lint formatting"]
+# golangci-lint will lint formatting failures when run with the `run` flag, per the above config.
+type = "tidy"
+include = "*.go"
+invoke.per-dir-or-once = 7
+working-dir = "root"
+path-args = "dir"
+cmd = [
+    "mise", "exec", "github:golangci/golangci-lint", "--",
+    "golangci-lint",
+    "fmt",
+    "--color", "always",
+]
 ok-exit-codes = [0]
+lint-failure-exit-codes = [1]
+labels = [ "default", "fast-tidy" ]
 
 # We could run this via golangci-lint but we want to exclude more directories
 # for gosec than we do for other linting. There doesn't seem to be a way to
@@ -126,18 +134,6 @@ lint-flags = "--diff"
 tidy-flags = "--write"
 ok-exit-codes = 0
 lint-failure-exit-codes = 1
-
-[commands.golines]
-type = "both"
-include = "**/*.go"
-invoke  = "once"
-working-dir = "root"
-path-args = "file"
-# This wrapper will tidy or lint based on the presence of the "--lint" flag.
-cmd = "$PRECIOUS_ROOT/etc/golines-wrapper.sh"
-lint-flags = "--lint"
-ok-exit-codes = [0]
-lint-failure-exit-codes = [1]
 
 [commands.github-codeowners]
 type = "lint"
