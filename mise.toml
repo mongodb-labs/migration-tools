@@ -4,7 +4,7 @@
 # registry with multiple backends, so spelling out "github:..." ensures we use the github backend.
 [tools]
 # Go stuff
-go = "1.25.7"
+go = "1.26.7"
 "go:golang.org/x/tools/gopls" = "0.21.1"
 "github:golangci/golangci-lint" = "2.10.1"
 "github:securego/gosec" = "2.23.0"
