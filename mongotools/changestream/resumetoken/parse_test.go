@@ -32,6 +32,24 @@ func TestParse(t *testing.T) {
 				TokenType: TokenTypeHighWaterMark,
 			},
 		},
+		{
+			label: "v1 event",
+			data:  "826A8C8FBC000000022B022C0100296E5A1004F6E232028E324338BC654BED3745B94B46645F696400646A8C8FBCD1A0E0B8CD8052CF0004",
+			expected: Parsed{
+				Timestamp: bson.Timestamp{1787596732, 2},
+				Version:   1,
+				TokenType: TokenTypeEvent,
+			},
+		},
+		{
+			label: "v1 high-water mark",
+			data:  "826A8C8FBF000000012B0229296E04",
+			expected: Parsed{
+				Timestamp: bson.Timestamp{1787596735, 1},
+				Version:   1,
+				TokenType: TokenTypeHighWaterMark,
+			},
+		},
 	}
 
 	for _, curCase := range cases {
