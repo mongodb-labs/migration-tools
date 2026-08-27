@@ -74,7 +74,11 @@ func Parse(rt bson.Raw) (Parsed, error) {
 		return Parsed{}, err
 	}
 
-	return p, nil
+if _, err := io.Copy(io.Discard, reader); err != nil {
+	return Parsed{}, fmt.Errorf("decode resume token data: %w", err)
+}
+
+return p, nil
 }
 
 func readTimestamp(reader io.Reader) (bson.Timestamp, error) {
