@@ -147,7 +147,12 @@ func TestIntegration_EventOrdering(t *testing.T) {
 		})
 
 		// Require here so that we don’t spew a redundant diff if the timestamps are out of order.
-		require.Equal(t, plainTimestamps, pcsTimestamps, "parallel change stream’s timestamps must match plain change stream’s")
+		require.Equal(
+			t,
+			plainTimestamps,
+			pcsTimestamps,
+			"parallel change stream’s timestamps must match plain change stream’s",
+		)
 
 		pcsJSONEvents := lo.Map(pcsEvents, func(ev bson.Raw, _ int) string {
 			return ev.String()

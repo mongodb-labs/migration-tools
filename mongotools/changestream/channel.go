@@ -9,7 +9,7 @@ import (
 
 // readEachChannelOnce reads exactly one value from each channel concurrently,
 // respecting ctx. Returns the values in the same order as the input channels.
-// If any read fails, the remaining reads are cancelled.
+// If any read fails, the remaining reads are canceled.
 func readEachChannelOnce[T any](ctx context.Context, chans ...<-chan T) ([]T, error) {
 	results := make([]T, len(chans))
 	g, ctx := contextplus.ErrGroup(ctx)
