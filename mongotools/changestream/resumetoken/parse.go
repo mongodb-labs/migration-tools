@@ -92,7 +92,11 @@ func assertKeyStringType(hexReader io.ByteReader) error {
 		return fmt.Errorf("read key string type byte: %w", err)
 	}
 	if typeIdent != rtTimeStampType {
-		return fmt.Errorf("unexpected key string type: %v (expected %v)", typeIdent, rtTimeStampType)
+		return fmt.Errorf(
+			"unexpected key string type: %v (expected %v)",
+			typeIdent,
+			rtTimeStampType,
+		)
 	}
 	return nil
 }
