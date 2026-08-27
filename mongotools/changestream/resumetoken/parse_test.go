@@ -64,3 +64,77 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
+
+func TestParse_Invalid(t *testing.T) {
+	cases := []struct {
+		label     string
+		token     bson.D
+		expectErr []string
+	}{
+		{
+			label:     "no _data",
+			token:     bson.D{{"foo", "bar"}},
+			expectErr: []string{"_data"},
+		},
+		{
+			label:     "_data is not a string",
+			token:     bson.D{{"_data", 123}},
+			expectErr: []string{"_data"},
+		},
+		{
+			label:     "empty _data",
+			token:     bson.D{{"_data", ""}},
+			expectErr: []string{"key string type byte"},
+		},
+		{
+			label:     "non-hex _data",
+			token:     bson.D{{"_data", "zzzz"}},
+			expectErr: []string{"key string type byte"},
+		},
+		{
+			label:     "odd-length hex _data",
+			token:     bson.D{{"_data", "826A8C8E6"}},
+			expectErr: []string{"timestamp"},
+		},
+		{
+			label:     "wrong key string type",
+			token:     bson.D{{"_data", "836A8C8E64000000012B0429296E1404"}},
+			expectErr: []string{"unexpected key string type", "131", "130"},
+		},
+		{
+			label:     "truncated in timestamp",
+			token:     bson.D{{"_data", "826A8C8E64"}},
+			expectErr: []string{"read timestamp"},
+		},
+		{
+			label:     "truncated after timestamp",
+			token:     bson.D{{"_data", "826A8C8E64000000012B04"}},
+			expectErr: []string{"after timestamp"},
+		},
+		{
+			label:     "unknown version",
+			token:     bson.D{{"_data", "826A8C8E64000000012B0629296E1404"}},
+			expectErr: []string{"version bytes", "2b06"},
+		},
+		{
+			label:     "unknown token type",
+			token:     bson.D{{"_data", "826A8C8E64000000012B0499296E1404"}},
+			expectErr: []string{"token type bytes", "99296e"},
+		},
+	}
+
+	for _, curCase := range cases {
+		t.Run(curCase.label, func(t *testing.T) {
+			rt, err := bson.Marshal(curCase.token)
+			require.NoError(t, err)
+
+			parsed, err := Parse(rt)
+			require.Error(t, err, "should fail to parse %v", curCase.token)
+			assert.Equal(t, Parsed{}, parsed, "should return zero-value parse")
+
+			for _, expect := range curCase.expectErr {
+				assert.ErrorContains(t, err, expect)
+			}
+		})
+	}
+}

@@ -49,12 +49,10 @@ func Parse(rt bson.Raw) (Parsed, error) {
 
 	var p Parsed
 
-	tsBytes := [8]byte{}
-	if _, err := io.ReadFull(reader, tsBytes[:]); err != nil {
-		return Parsed{}, fmt.Errorf("read timestamp: %w", err)
+	p.Timestamp, err = readTimestamp(reader)
+	if err != nil {
+		return Parsed{}, err
 	}
-	p.Timestamp.T = binary.BigEndian.Uint32(tsBytes[:4])
-	p.Timestamp.I = binary.BigEndian.Uint32(tsBytes[4:])
 
 	afterTS := [5]byte{}
 	if _, err := io.ReadFull(reader, afterTS[:]); err != nil {
@@ -66,25 +64,51 @@ func Parse(rt bson.Raw) (Parsed, error) {
 	// $_internalKeyStringValue aggregation operator for more context on the
 	// key string format.
 
-	switch {
-	case bytes.HasPrefix(afterTS[:], []byte{0x2b, 0x02}):
-		p.Version = 1
-	case bytes.HasPrefix(afterTS[:], []byte{0x2b, 0x04}):
-		p.Version = 2
-	default:
-		return Parsed{}, fmt.Errorf("unexpected resume token version bytes: %x", afterTS[:2])
+	p.Version, err = parseVersion(afterTS[:2])
+	if err != nil {
+		return Parsed{}, err
 	}
 
-	switch {
-	case bytes.HasPrefix(afterTS[2:], []byte{0x29}):
-		p.TokenType = TokenTypeHighWaterMark
-	case bytes.HasPrefix(afterTS[2:], []byte{0x2c, 0x01, 0x00}):
-		p.TokenType = TokenTypeEvent
-	default:
-		return Parsed{}, fmt.Errorf("unexpected token type bytes: %x", afterTS[2:])
+	p.TokenType, err = parseTokenType(afterTS[2:])
+	if err != nil {
+		return Parsed{}, err
 	}
 
 	return p, nil
+}
+
+func readTimestamp(reader io.Reader) (bson.Timestamp, error) {
+	tsBytes := [8]byte{}
+	if _, err := io.ReadFull(reader, tsBytes[:]); err != nil {
+		return bson.Timestamp{}, fmt.Errorf("read timestamp: %w", err)
+	}
+
+	return bson.Timestamp{
+		T: binary.BigEndian.Uint32(tsBytes[:4]),
+		I: binary.BigEndian.Uint32(tsBytes[4:]),
+	}, nil
+}
+
+func parseVersion(versionBytes []byte) (byte, error) {
+	switch {
+	case bytes.HasPrefix(versionBytes, []byte{0x2b, 0x02}):
+		return 1, nil
+	case bytes.HasPrefix(versionBytes, []byte{0x2b, 0x04}):
+		return 2, nil
+	}
+
+	return 0, fmt.Errorf("unexpected resume token version bytes: %x", versionBytes)
+}
+
+func parseTokenType(typeBytes []byte) (TokenType, error) {
+	switch {
+	case bytes.HasPrefix(typeBytes, []byte{0x29}):
+		return TokenTypeHighWaterMark, nil
+	case bytes.HasPrefix(typeBytes, []byte{0x2c, 0x01, 0x00}):
+		return TokenTypeEvent, nil
+	}
+
+	return 0, fmt.Errorf("unexpected token type bytes: %x", typeBytes)
 }
 
 func assertKeyStringType(hexReader io.ByteReader) error {
