@@ -83,7 +83,11 @@ func Parse(rt bson.Raw) (Parsed, error) {
 		return Parsed{}, fmt.Errorf("unexpected token type bytes: %x", afterTS[2:])
 	}
 
-	return p, nil
+if _, err := io.Copy(io.Discard, reader); err != nil {
+	return Parsed{}, fmt.Errorf("decode resume token data: %w", err)
+}
+
+return p, nil
 }
 
 func assertKeyStringType(hexReader io.ByteReader) error {
