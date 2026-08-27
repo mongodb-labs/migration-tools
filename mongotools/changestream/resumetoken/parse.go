@@ -1,3 +1,4 @@
+// Package resumetoken exposes tooling around change stream resume tokens.
 package resumetoken
 
 import (
