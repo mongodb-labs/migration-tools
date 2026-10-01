@@ -21,6 +21,10 @@
 // representation and implements [bson.Marshaler] through that method.
 //
 // This library doesn’t cover all expressions for now. Expand as is convenient.
+//
+// Also see: https://github.com/mongodb-labs/mongo-go-driver-exp/tree/main/mql
+// This may become officially part of the Go driver eventually. If it does, we
+// may want to remove most or all of this package.
 package expr
 
 import "go.mongodb.org/mongo-driver/v2/bson"
