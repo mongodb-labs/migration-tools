@@ -113,7 +113,7 @@ func (m MergeObjects) MarshalBSON() ([]byte, error) {
 
 // GetField is the $getField operator. Input is optional; it is omitted
 // from the expression when nil (in which case the server defaults to
-// $$ROOT).
+// $$CURRENT).
 type GetField struct {
 	Input, Field any
 }
