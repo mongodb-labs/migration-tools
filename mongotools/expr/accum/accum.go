@@ -1,6 +1,4 @@
-// Package accum exposes helper types for accumulation operators, i.e.,
-// the operators usable only within a $group’s or $bucket’s fields or
-// similar contexts.
+// Package accum exposes helper types for accumulation operators.
 package accum
 
 import "go.mongodb.org/mongo-driver/v2/bson"

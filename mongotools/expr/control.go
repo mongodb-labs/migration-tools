@@ -26,8 +26,7 @@ func (c Cond) MarshalBSON() ([]byte, error) {
 // ---------------------------------------------
 
 // Switch is the $switch operator. Default is optional; it is omitted
-// from the expression when nil (in which case the server errors when
-// no branch matches).
+// from the expression when nil.
 type Switch struct {
 	Branches []SwitchCase
 	Default  any
@@ -56,9 +55,7 @@ func (s Switch) MarshalBSON() ([]byte, error) {
 
 // ---------------------------------------------
 
-// IfNull is the $ifNull operator. It takes one or more input
-// expressions followed by a replacement expression, evaluated in
-// order.
+// IfNull is the $ifNull operator.
 type IfNull []any
 
 var _ bson.Marshaler = IfNull{}

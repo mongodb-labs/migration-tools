@@ -8,8 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// Exists expresses “the referenced field exists”, regardless of its
-// value, including null.
+// Exists expresses whether the referenced field exists.
 type Exists [1]any
 
 var _ bson.Marshaler = Exists{}

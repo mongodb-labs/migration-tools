@@ -32,8 +32,7 @@ func (a Add) MarshalBSON() ([]byte, error) {
 
 // ----------------------------
 
-// Mod is the $mod operator. It takes exactly two arguments: dividend
-// and divisor.
+// Mod is the $mod operator.
 type Mod [2]any
 
 var _ bson.Marshaler = Mod{}

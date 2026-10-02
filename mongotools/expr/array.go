@@ -67,9 +67,7 @@ func (s Size) MarshalBSON() ([]byte, error) {
 
 // ----------------------------
 
-// SetDifference is the $setDifference operator. It takes exactly two
-// arguments and returns elements in the first that aren’t in the
-// second.
+// SetDifference is the $setDifference operator.
 type SetDifference [2]any
 
 var _ bson.Marshaler = SetDifference{}
@@ -140,8 +138,7 @@ func (r Reduce) MarshalBSON() ([]byte, error) {
 // ---------------------------------------------
 
 // Map is the $map operator. As is optional; it is omitted from the
-// expression when nil (in which case the server defaults the variable
-// name to “this”).
+// expression when nil.
 type Map struct {
 	Input, As, In any
 }
