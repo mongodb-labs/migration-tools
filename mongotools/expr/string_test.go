@@ -23,3 +23,22 @@ func TestSubstrBytes(t *testing.T) {
 		{"$substrBytes", bson.A{"$name", 0, 3}},
 	})
 }
+
+func TestRegexMatch(t *testing.T) {
+	// Without Options.
+	assertExpr(t, RegexMatch{Input: "$name", Regex: "^pre"}, bson.D{
+		{"$regexMatch", bson.D{
+			{"input", "$name"},
+			{"regex", "^pre"},
+		}},
+	})
+
+	// With Options.
+	assertExpr(t, RegexMatch{Input: "$name", Regex: "^pre", Options: "i"}, bson.D{
+		{"$regexMatch", bson.D{
+			{"input", "$name"},
+			{"regex", "^pre"},
+			{"options", "i"},
+		}},
+	})
+}

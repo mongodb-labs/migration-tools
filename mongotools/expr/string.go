@@ -44,3 +44,29 @@ func (s SubstrBytes) D() bson.D {
 func (s SubstrBytes) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(s.D())
 }
+
+// ----------------------------
+
+// RegexMatch is the $regexMatch operator. Options is optional; it is
+// omitted from the expression when nil.
+type RegexMatch struct {
+	Input, Regex, Options any
+}
+
+var _ bson.Marshaler = RegexMatch{}
+
+func (rm RegexMatch) D() bson.D {
+	spec := bson.D{
+		{"input", rm.Input},
+		{"regex", rm.Regex},
+	}
+	if rm.Options != nil {
+		spec = append(spec, bson.E{"options", rm.Options})
+	}
+
+	return bson.D{{"$regexMatch", spec}}
+}
+
+func (rm RegexMatch) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(rm.D())
+}
