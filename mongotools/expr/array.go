@@ -50,6 +50,70 @@ func (a ArrayElemAt) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(a.D())
 }
 
+// ----------------------------
+
+// Size is the $size operator.
+type Size [1]any
+
+var _ bson.Marshaler = Size{}
+
+func (s Size) D() bson.D {
+	return bson.D{{"$size", s[0]}}
+}
+
+func (s Size) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(s.D())
+}
+
+// ----------------------------
+
+// SetDifference is the $setDifference operator. It takes exactly two
+// arguments and returns elements in the first that aren’t in the
+// second.
+type SetDifference [2]any
+
+var _ bson.Marshaler = SetDifference{}
+
+func (s SetDifference) D() bson.D {
+	return bson.D{{"$setDifference", [2]any(s)}}
+}
+
+func (s SetDifference) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(s.D())
+}
+
+// ----------------------------
+
+// SetIntersection is the $setIntersection operator.
+type SetIntersection []any
+
+var _ bson.Marshaler = SetIntersection{}
+
+func (s SetIntersection) D() bson.D {
+	return bson.D{{"$setIntersection", []any(s)}}
+}
+
+func (s SetIntersection) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(s.D())
+}
+
+// ----------------------------
+
+// SetUnion is the $setUnion operator.
+//
+// See accum.SetUnion for the related accumulation operator.
+type SetUnion []any
+
+var _ bson.Marshaler = SetUnion{}
+
+func (s SetUnion) D() bson.D {
+	return bson.D{{"$setUnion", []any(s)}}
+}
+
+func (s SetUnion) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(s.D())
+}
+
 // ---------------------------------------------
 
 // Reduce is the $reduce operator.

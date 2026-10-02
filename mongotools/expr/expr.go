@@ -155,3 +155,19 @@ func (l Let) D() bson.D {
 func (l Let) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(l.D())
 }
+
+// ---------------------------------------------
+
+// Literal is the $literal operator. It parses its value without
+// interpreting any expression syntax within it.
+type Literal [1]any
+
+var _ bson.Marshaler = Literal{}
+
+func (l Literal) D() bson.D {
+	return bson.D{{"$literal", l[0]}}
+}
+
+func (l Literal) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(l.D())
+}

@@ -52,6 +52,30 @@ func TestGt(t *testing.T) {
 	})
 }
 
+func TestNe(t *testing.T) {
+	assertExpr(t, Ne{"status", "inactive"}, bson.D{
+		{"$ne", bson.A{"status", "inactive"}},
+	})
+}
+
+func TestLt(t *testing.T) {
+	assertExpr(t, Lt{"count", 10}, bson.D{
+		{"$lt", bson.A{"count", 10}},
+	})
+}
+
+func TestLte(t *testing.T) {
+	assertExpr(t, Lte{"count", 10}, bson.D{
+		{"$lte", bson.A{"count", 10}},
+	})
+}
+
+func TestGte(t *testing.T) {
+	assertExpr(t, Gte{"count", 10}, bson.D{
+		{"$gte", bson.A{"count", 10}},
+	})
+}
+
 func TestIn(t *testing.T) {
 	// With literal values.
 	assert.Equal(
@@ -72,6 +96,12 @@ func TestIn(t *testing.T) {
 func TestBSONSize(t *testing.T) {
 	assertExpr(t, BSONSize{"$ROOT"}, bson.D{
 		{"$bsonSize", "$ROOT"},
+	})
+}
+
+func TestLiteral(t *testing.T) {
+	assertExpr(t, Literal{bson.D{{"$gte", 1}}}, bson.D{
+		{"$literal", bson.D{{"$gte", 1}}},
 	})
 }
 
@@ -184,6 +214,27 @@ func TestCond(t *testing.T) {
 			{"if", bson.D{{"$eq", bson.A{"$a", 1}}}},
 			{"then", "yes"},
 			{"else", "no"},
+		}},
+	})
+}
+
+func TestIfNull(t *testing.T) {
+	// Single input expression.
+	assertExpr(t, IfNull{"$rated", "Not Rated"}, bson.D{
+		{"$ifNull", bson.A{"$rated", "Not Rated"}},
+	})
+
+	// Multiple input expressions.
+	assertExpr(t, IfNull{"$critic", "$viewer", 0}, bson.D{
+		{"$ifNull", bson.A{"$critic", "$viewer", 0}},
+	})
+}
+
+func TestNor(t *testing.T) {
+	assertExpr(t, Nor{Eq{"$a", 1}, Eq{"$b", 2}}, bson.D{
+		{"$nor", bson.A{
+			bson.D{{"$eq", bson.A{"$a", 1}}},
+			bson.D{{"$eq", bson.A{"$b", 2}}},
 		}},
 	})
 }

@@ -1,7 +1,7 @@
-// Expressions for accumulation operators, i.e., the operators usable
-// only within a $group’s or $bucket’s fields or similar contexts.
-
-package expr
+// Package accum exposes helper types for accumulation operators, i.e.,
+// the operators usable only within a $group’s or $bucket’s fields or
+// similar contexts.
+package accum
 
 import "go.mongodb.org/mongo-driver/v2/bson"
 
@@ -31,6 +31,21 @@ func (p Push) D() bson.D {
 
 func (p Push) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(p.D())
+}
+
+//----------------------------------------------------------------------
+
+// AddToSet is the $addToSet accumulator.
+type AddToSet [1]any
+
+var _ bson.Marshaler = AddToSet{}
+
+func (a AddToSet) D() bson.D {
+	return bson.D{{"$addToSet", a[0]}}
+}
+
+func (a AddToSet) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(a.D())
 }
 
 //----------------------------------------------------------------------
@@ -84,6 +99,21 @@ func (t FirstN) D() bson.D {
 
 func (t FirstN) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(t.D())
+}
+
+//----------------------------------------------------------------------
+
+// SetUnion is the $setUnion accumulator.
+type SetUnion [1]any
+
+var _ bson.Marshaler = SetUnion{}
+
+func (s SetUnion) D() bson.D {
+	return bson.D{{"$setUnion", s[0]}}
+}
+
+func (s SetUnion) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(s.D())
 }
 
 //----------------------------------------------------------------------

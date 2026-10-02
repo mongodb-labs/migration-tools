@@ -53,3 +53,35 @@ func (s Switch) D() bson.D {
 func (s Switch) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(s.D())
 }
+
+// ---------------------------------------------
+
+// IfNull is the $ifNull operator. It takes one or more input
+// expressions followed by a replacement expression, evaluated in
+// order.
+type IfNull []any
+
+var _ bson.Marshaler = IfNull{}
+
+func (i IfNull) D() bson.D {
+	return bson.D{{"$ifNull", []any(i)}}
+}
+
+func (i IfNull) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(i.D())
+}
+
+// ---------------------------------------------
+
+// Nor is the $nor operator.
+type Nor []any
+
+var _ bson.Marshaler = Nor{}
+
+func (n Nor) D() bson.D {
+	return bson.D{{"$nor", []any(n)}}
+}
+
+func (n Nor) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(n.D())
+}
