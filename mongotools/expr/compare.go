@@ -38,5 +38,3 @@ func (g Gt) MarshalBSON() ([]byte, error) {
 func In[T any](needle any, haystack ...T) bson.D {
 	return bson.D{{"$in", bson.A{needle, haystack}}}
 }
-
-// ---------------------------------------------
