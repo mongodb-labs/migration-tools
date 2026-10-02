@@ -1,30 +1,19 @@
 // Package expr provides convenience types and functions for building
-// aggregation expressions.
+// aggregation expressions. This lets you write out expressions using
+// syntax like:
 //
-// This yields two major advantages over using [bson.D] or [bson.M]
-// directly:
+//	agg.Cond{
+//	    If: "$someFlag",
+//	    Then: "yes",
+//	    Else: "no",
+//	}
+//
+// … rather than using [bson.D] or [bson.M]. Advantages include:
+//   - protection against misspellings
 //   - simpler syntax
 //   - auto-completion (i.e., via gopls)
 //
-// Guiding principles are:
-//   - Prefer [1]any for unary operators (e.g., $bsonSize).
-//   - Prefer [2]any for binary operators whose arguments don’t benefit
-//     from naming (e.g., $eq).
-//   - Prefer struct types for operators with named parameters AND for
-//     operators whose documentation gives names, even if those names aren’t
-//     sent to the server.
-//   - Struct field names should match the server’s.
-//   - Use functions sparingly, e.g., for “tuple” operators like $in.
-//   - Use Go type `any` for arbitrary expressions.
-//
-// Every expression type has a D() method that returns its [bson.D]
-// representation and implements [bson.Marshaler] through that method.
-//
-// This library doesn’t cover all expressions for now. Expand as is convenient.
-//
-// Also see: https://github.com/mongodb-labs/mongo-go-driver-exp/tree/main/mql
-// This may become officially part of the Go driver eventually. If it does, we
-// may want to remove most or all of this package.
+// See this package’s README.md for more details.
 package expr
 
 import "go.mongodb.org/mongo-driver/v2/bson"
@@ -44,18 +33,19 @@ func (b BSONSize) MarshalBSON() ([]byte, error) {
 
 // ---------------------------------------------
 
-// TypeOf is the $type operator.
+// Type is the $type operator. Use [BSONType] to refer to the BSON
+// types it can match.
 //
 // NB: helpers.TypeIs() is often more convenient.
-type TypeOf [1]any
+type Type [1]any
 
-var _ bson.Marshaler = TypeOf{}
+var _ bson.Marshaler = Type{}
 
-func (t TypeOf) D() bson.D {
+func (t Type) D() bson.D {
 	return bson.D{{"$type", t[0]}}
 }
 
-func (t TypeOf) MarshalBSON() ([]byte, error) {
+func (t Type) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(t.D())
 }
 
@@ -121,7 +111,9 @@ func (m MergeObjects) MarshalBSON() ([]byte, error) {
 
 // ---------------------------------------------
 
-// GetField is the $getField operator.
+// GetField is the $getField operator. Input is optional; it is omitted
+// from the expression when nil (in which case the server defaults to
+// $$ROOT).
 type GetField struct {
 	Input, Field any
 }
@@ -129,12 +121,13 @@ type GetField struct {
 var _ bson.Marshaler = GetField{}
 
 func (gf GetField) D() bson.D {
-	return bson.D{
-		{"$getField", bson.D{
-			{"input", gf.Input},
-			{"field", gf.Field},
-		}},
+	spec := bson.D{}
+	if gf.Input != nil {
+		spec = append(spec, bson.E{"input", gf.Input})
 	}
+	spec = append(spec, bson.E{"field", gf.Field})
+
+	return bson.D{{"$getField", spec}}
 }
 
 func (gf GetField) MarshalBSON() ([]byte, error) {

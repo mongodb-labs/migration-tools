@@ -61,41 +61,41 @@ func TestTypeIs(t *testing.T) {
 	cases := []struct {
 		label string
 		ref   any
-		types []expr.Type
+		types []expr.BSONType
 		want  bson.D
 	}{
 		{
 			label: "single type",
 			ref:   "$myField",
-			types: []expr.Type{expr.TypeLong},
+			types: []expr.BSONType{expr.BSONTypeLong},
 			want: bson.D{
 				{"$in", bson.A{
 					bson.D{{"$type", "$myField"}},
-					bson.A{expr.TypeLong},
+					bson.A{expr.BSONTypeLong},
 				}},
 			},
 		},
 		{
 			label: "multiple types",
 			ref:   "$myField",
-			types: []expr.Type{expr.TypeLong, expr.TypeString, expr.TypeNull},
+			types: []expr.BSONType{expr.BSONTypeLong, expr.BSONTypeString, expr.BSONTypeNull},
 			want: bson.D{
 				{"$in", bson.A{
 					bson.D{{"$type", "$myField"}},
-					bson.A{expr.TypeLong, expr.TypeString, expr.TypeNull},
+					bson.A{expr.BSONTypeLong, expr.BSONTypeString, expr.BSONTypeNull},
 				}},
 			},
 		},
 		{
 			label: "ref is an expression",
 			ref:   expr.Concat{"$firstName", " ", "$lastName"},
-			types: []expr.Type{expr.TypeString},
+			types: []expr.BSONType{expr.BSONTypeString},
 			want: bson.D{
 				{"$in", bson.A{
 					bson.D{{"$type", bson.D{
 						{"$concat", bson.A{"$firstName", " ", "$lastName"}},
 					}}},
-					bson.A{expr.TypeString},
+					bson.A{expr.BSONTypeString},
 				}},
 			},
 		},

@@ -75,7 +75,9 @@ func (r Reduce) MarshalBSON() ([]byte, error) {
 
 // ---------------------------------------------
 
-// Map is the $map operator.
+// Map is the $map operator. As is optional; it is omitted from the
+// expression when nil (in which case the server defaults the variable
+// name to “this”).
 type Map struct {
 	Input, As, In any
 }
@@ -83,13 +85,15 @@ type Map struct {
 var _ bson.Marshaler = Map{}
 
 func (m Map) D() bson.D {
-	return bson.D{
-		{"$map", bson.D{
-			{"input", m.Input},
-			{"as", m.As},
-			{"in", m.In},
-		}},
+	spec := bson.D{
+		{"input", m.Input},
+		{"in", m.In},
 	}
+	if m.As != nil {
+		spec = slices.Insert(spec, 1, bson.E{"as", m.As})
+	}
+
+	return bson.D{{"$map", spec}}
 }
 
 func (m Map) MarshalBSON() ([]byte, error) {

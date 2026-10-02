@@ -15,7 +15,7 @@ type Exists [1]any
 var _ bson.Marshaler = Exists{}
 
 func (e Exists) D() bson.D {
-	return expr.Not{expr.Eq{"missing", expr.TypeOf{e[0]}}}.D()
+	return expr.Not{expr.Eq{"missing", expr.Type{e[0]}}}.D()
 }
 
 func (e Exists) MarshalBSON() ([]byte, error) {
@@ -25,8 +25,8 @@ func (e Exists) MarshalBSON() ([]byte, error) {
 // ----------------------------
 
 // TypeIs expresses whether ref’s BSON type matches any of the specified types.
-func TypeIs(ref any, types ...expr.Type) bson.D {
-	return expr.In(expr.TypeOf{ref}, types...)
+func TypeIs(ref any, types ...expr.BSONType) bson.D {
+	return expr.In(expr.Type{ref}, types...)
 }
 
 // ----------------------------

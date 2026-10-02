@@ -1,34 +1,34 @@
 package expr
 
-// Type is a BSON type name as used in $type expressions. See the
+// BSONType is a BSON type name as used in $type expressions. See the
 // $type operator’s documentation for the canonical list of names:
 // https://www.mongodb.com/docs/manual/reference/operator/aggregation/type/
-type Type string
+type BSONType string
 
 const (
-	TypeDouble              Type = "double"
-	TypeString              Type = "string"
-	TypeObject              Type = "object"
-	TypeArray               Type = "array"
-	TypeBinData             Type = "binData"
-	TypeUndefined           Type = "undefined"
-	TypeObjectID            Type = "objectId"
-	TypeBool                Type = "bool"
-	TypeDate                Type = "date"
-	TypeNull                Type = "null"
-	TypeRegex               Type = "regex"
-	TypeDBPointer           Type = "dbPointer"
-	TypeJavaScript          Type = "javascript"
-	TypeSymbol              Type = "symbol"
-	TypeJavaScriptWithScope Type = "javascriptWithScope"
-	TypeInt                 Type = "int"
-	TypeTimestamp           Type = "timestamp"
-	TypeLong                Type = "long"
-	TypeDecimal             Type = "decimal"
-	TypeMinKey              Type = "minKey"
-	TypeMaxKey              Type = "maxKey"
+	BSONTypeDouble              BSONType = "double"
+	BSONTypeString              BSONType = "string"
+	BSONTypeObject              BSONType = "object"
+	BSONTypeArray               BSONType = "array"
+	BSONTypeBinData             BSONType = "binData"
+	BSONTypeUndefined           BSONType = "undefined"
+	BSONTypeObjectID            BSONType = "objectId"
+	BSONTypeBool                BSONType = "bool"
+	BSONTypeDate                BSONType = "date"
+	BSONTypeNull                BSONType = "null"
+	BSONTypeRegex               BSONType = "regex"
+	BSONTypeDBPointer           BSONType = "dbPointer"
+	BSONTypeJavaScript          BSONType = "javascript"
+	BSONTypeSymbol              BSONType = "symbol"
+	BSONTypeJavaScriptWithScope BSONType = "javascriptWithScope"
+	BSONTypeInt                 BSONType = "int"
+	BSONTypeTimestamp           BSONType = "timestamp"
+	BSONTypeLong                BSONType = "long"
+	BSONTypeDecimal             BSONType = "decimal"
+	BSONTypeMinKey              BSONType = "minKey"
+	BSONTypeMaxKey              BSONType = "maxKey"
 
-	// TypeNumber is an alias that matches TypeDouble, TypeInt,
-	// TypeLong, and TypeDecimal.
-	TypeNumber Type = "number"
+	// BSONTypeNumber is an alias that matches BSONTypeDouble,
+	// BSONTypeInt, BSONTypeLong, and BSONTypeDecimal.
+	BSONTypeNumber BSONType = "number"
 )

@@ -75,59 +75,59 @@ func TestBSONSize(t *testing.T) {
 	})
 }
 
-func TestTypeOf(t *testing.T) {
-	assertExpr(t, TypeOf{"$value"}, bson.D{
+func TestType(t *testing.T) {
+	assertExpr(t, Type{"$value"}, bson.D{
 		{"$type", "$value"},
 	})
 }
 
-// TestBSONTypeValues checks the Type constants against the canonical
-// values from the $type operator’s documentation.
+// TestBSONTypeValues checks the BSONType constants against the
+// canonical values from the $type operator’s documentation.
 func TestBSONTypeValues(t *testing.T) {
-	cases := map[Type]string{
-		TypeDouble:              "double",
-		TypeString:              "string",
-		TypeObject:              "object",
-		TypeArray:               "array",
-		TypeBinData:             "binData",
-		TypeUndefined:           "undefined",
-		TypeObjectID:            "objectId",
-		TypeBool:                "bool",
-		TypeDate:                "date",
-		TypeNull:                "null",
-		TypeRegex:               "regex",
-		TypeDBPointer:           "dbPointer",
-		TypeJavaScript:          "javascript",
-		TypeSymbol:              "symbol",
-		TypeJavaScriptWithScope: "javascriptWithScope",
-		TypeInt:                 "int",
-		TypeTimestamp:           "timestamp",
-		TypeLong:                "long",
-		TypeDecimal:             "decimal",
-		TypeMinKey:              "minKey",
-		TypeMaxKey:              "maxKey",
-		TypeNumber:              "number",
+	cases := map[BSONType]string{
+		BSONTypeDouble:              "double",
+		BSONTypeString:              "string",
+		BSONTypeObject:              "object",
+		BSONTypeArray:               "array",
+		BSONTypeBinData:             "binData",
+		BSONTypeUndefined:           "undefined",
+		BSONTypeObjectID:            "objectId",
+		BSONTypeBool:                "bool",
+		BSONTypeDate:                "date",
+		BSONTypeNull:                "null",
+		BSONTypeRegex:               "regex",
+		BSONTypeDBPointer:           "dbPointer",
+		BSONTypeJavaScript:          "javascript",
+		BSONTypeSymbol:              "symbol",
+		BSONTypeJavaScriptWithScope: "javascriptWithScope",
+		BSONTypeInt:                 "int",
+		BSONTypeTimestamp:           "timestamp",
+		BSONTypeLong:                "long",
+		BSONTypeDecimal:             "decimal",
+		BSONTypeMinKey:              "minKey",
+		BSONTypeMaxKey:              "maxKey",
+		BSONTypeNumber:              "number",
 	}
 
 	for curType, curValue := range cases {
-		assert.Equal(t, Type(curValue), curType)
+		assert.Equal(t, BSONType(curValue), curType)
 	}
 }
 
 func TestNot(t *testing.T) {
-	assertExpr(t, Not{TypeOf{"$value"}}, bson.D{
+	assertExpr(t, Not{Type{"$value"}}, bson.D{
 		{"$not", bson.D{{"$type", "$value"}}},
 	})
 }
 
 func TestAnd(t *testing.T) {
-	assertExpr(t, And{TypeOf{"$a"}, TypeOf{"$b"}}, bson.D{
+	assertExpr(t, And{Type{"$a"}, Type{"$b"}}, bson.D{
 		{"$and", bson.A{bson.D{{"$type", "$a"}}, bson.D{{"$type", "$b"}}}},
 	})
 }
 
 func TestOr(t *testing.T) {
-	assertExpr(t, Or{TypeOf{"$a"}, TypeOf{"$b"}}, bson.D{
+	assertExpr(t, Or{Type{"$a"}, Type{"$b"}}, bson.D{
 		{"$or", bson.A{bson.D{{"$type", "$a"}}, bson.D{{"$type", "$b"}}}},
 	})
 }
@@ -139,9 +139,17 @@ func TestMergeObjects(t *testing.T) {
 }
 
 func TestGetField(t *testing.T) {
+	// With Input.
 	assertExpr(t, GetField{Input: "$doc", Field: "myField"}, bson.D{
 		{"$getField", bson.D{
 			{"input", "$doc"},
+			{"field", "myField"},
+		}},
+	})
+
+	// Input is omitted when nil.
+	assertExpr(t, GetField{Field: "myField"}, bson.D{
+		{"$getField", bson.D{
 			{"field", "myField"},
 		}},
 	})
@@ -181,6 +189,12 @@ func TestCond(t *testing.T) {
 }
 
 func TestSwitch(t *testing.T) {
+	branches := bson.A{
+		bson.D{{"case", bson.D{{"$eq", bson.A{"$a", 1}}}}, {"then", "one"}},
+		bson.D{{"case", bson.D{{"$eq", bson.A{"$a", 2}}}}, {"then", "two"}},
+	}
+
+	// With Default.
 	assertExpr(t, Switch{
 		Branches: []SwitchCase{
 			{Case: Eq{"$a", 1}, Then: "one"},
@@ -189,21 +203,39 @@ func TestSwitch(t *testing.T) {
 		Default: "other",
 	}, bson.D{
 		{"$switch", bson.D{
-			{"branches", bson.A{
-				bson.D{{"case", bson.D{{"$eq", bson.A{"$a", 1}}}}, {"then", "one"}},
-				bson.D{{"case", bson.D{{"$eq", bson.A{"$a", 2}}}}, {"then", "two"}},
-			}},
+			{"branches", branches},
 			{"default", "other"},
+		}},
+	})
+
+	// Default is omitted when nil.
+	assertExpr(t, Switch{
+		Branches: []SwitchCase{
+			{Case: Eq{"$a", 1}, Then: "one"},
+			{Case: Eq{"$a", 2}, Then: "two"},
+		},
+	}, bson.D{
+		{"$switch", bson.D{
+			{"branches", branches},
 		}},
 	})
 }
 
 func TestMap(t *testing.T) {
+	// With As.
 	assertExpr(t, Map{Input: "$array", As: "elem", In: "$$elem"}, bson.D{
 		{"$map", bson.D{
 			{"input", "$array"},
 			{"as", "elem"},
 			{"in", "$$elem"},
+		}},
+	})
+
+	// As is omitted when nil.
+	assertExpr(t, Map{Input: "$array", In: "$$this"}, bson.D{
+		{"$map", bson.D{
+			{"input", "$array"},
+			{"in", "$$this"},
 		}},
 	})
 }

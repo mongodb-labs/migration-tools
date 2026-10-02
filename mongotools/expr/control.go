@@ -25,7 +25,9 @@ func (c Cond) MarshalBSON() ([]byte, error) {
 
 // ---------------------------------------------
 
-// Switch is the $switch operator.
+// Switch is the $switch operator. Default is optional; it is omitted
+// from the expression when nil (in which case the server errors when
+// no branch matches).
 type Switch struct {
 	Branches []SwitchCase
 	Default  any
@@ -40,10 +42,12 @@ type SwitchCase struct {
 }
 
 func (s Switch) D() bson.D {
-	return bson.D{{"$switch", bson.D{
-		{"branches", s.Branches},
-		{"default", s.Default},
-	}}}
+	spec := bson.D{{"branches", s.Branches}}
+	if s.Default != nil {
+		spec = append(spec, bson.E{"default", s.Default})
+	}
+
+	return bson.D{{"$switch", spec}}
 }
 
 func (s Switch) MarshalBSON() ([]byte, error) {
