@@ -26,8 +26,7 @@ func (c Cond) MarshalBSON() ([]byte, error) {
 // ---------------------------------------------
 
 // Switch is the $switch operator. Default is optional; it is omitted
-// from the expression when nil (in which case the server errors when
-// no branch matches).
+// from the expression when nil.
 type Switch struct {
 	Branches []SwitchCase
 	Default  any
@@ -52,4 +51,34 @@ func (s Switch) D() bson.D {
 
 func (s Switch) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(s.D())
+}
+
+// ---------------------------------------------
+
+// IfNull is the $ifNull operator.
+type IfNull []any
+
+var _ bson.Marshaler = IfNull{}
+
+func (i IfNull) D() bson.D {
+	return bson.D{{"$ifNull", []any(i)}}
+}
+
+func (i IfNull) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(i.D())
+}
+
+// ---------------------------------------------
+
+// Nor is the $nor operator.
+type Nor []any
+
+var _ bson.Marshaler = Nor{}
+
+func (n Nor) D() bson.D {
+	return bson.D{{"$nor", []any(n)}}
+}
+
+func (n Nor) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(n.D())
 }

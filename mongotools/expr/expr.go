@@ -112,8 +112,7 @@ func (m MergeObjects) MarshalBSON() ([]byte, error) {
 // ---------------------------------------------
 
 // GetField is the $getField operator. Input is optional; it is omitted
-// from the expression when nil (in which case the server defaults to
-// $$CURRENT).
+// from the expression when nil.
 type GetField struct {
 	Input, Field any
 }
@@ -153,5 +152,20 @@ func (l Let) D() bson.D {
 }
 
 func (l Let) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(l.D())
+}
+
+// ---------------------------------------------
+
+// Literal is the $literal operator.
+type Literal [1]any
+
+var _ bson.Marshaler = Literal{}
+
+func (l Literal) D() bson.D {
+	return bson.D{{"$literal", l[0]}}
+}
+
+func (l Literal) MarshalBSON() ([]byte, error) {
 	return bson.Marshal(l.D())
 }

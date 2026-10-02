@@ -25,3 +25,27 @@ func TestArrayElemAt(t *testing.T) {
 		{"$arrayElemAt", bson.A{"$array", -1}},
 	})
 }
+
+func TestSize(t *testing.T) {
+	assertExpr(t, Size{"$array"}, bson.D{
+		{"$size", "$array"},
+	})
+}
+
+func TestSetDifference(t *testing.T) {
+	assertExpr(t, SetDifference{"$current", "$previous"}, bson.D{
+		{"$setDifference", bson.A{"$current", "$previous"}},
+	})
+}
+
+func TestSetIntersection(t *testing.T) {
+	assertExpr(t, SetIntersection{"$a", "$b", "$c"}, bson.D{
+		{"$setIntersection", bson.A{"$a", "$b", "$c"}},
+	})
+}
+
+func TestSetUnion(t *testing.T) {
+	assertExpr(t, SetUnion{"$a", "$b"}, bson.D{
+		{"$setUnion", bson.A{"$a", "$b"}},
+	})
+}

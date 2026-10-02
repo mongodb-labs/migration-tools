@@ -1,10 +1,32 @@
-package expr
+package accum
 
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+// assertExpr checks that e’s D() and MarshalBSON() agree with each
+// other and with want.
+func assertExpr(t *testing.T, e interface {
+	D() bson.D
+	bson.Marshaler
+}, want bson.D) {
+	t.Helper()
+
+	wantBytes, err := bson.Marshal(want)
+	require.NoError(t, err)
+
+	dBytes, err := bson.Marshal(e.D())
+	require.NoError(t, err)
+	assert.Equal(t, wantBytes, dBytes, "D() mismatch")
+
+	marshaled, err := e.MarshalBSON()
+	require.NoError(t, err)
+	assert.Equal(t, wantBytes, marshaled, "MarshalBSON() mismatch")
+}
 
 func TestSum(t *testing.T) {
 	assertExpr(t, Sum{"$count"}, bson.D{{"$sum", "$count"}})
@@ -12,6 +34,10 @@ func TestSum(t *testing.T) {
 
 func TestPush(t *testing.T) {
 	assertExpr(t, Push{"$value"}, bson.D{{"$push", "$value"}})
+}
+
+func TestAddToSet(t *testing.T) {
+	assertExpr(t, AddToSet{"$item"}, bson.D{{"$addToSet", "$item"}})
 }
 
 func TestMax(t *testing.T) {
@@ -29,6 +55,10 @@ func TestFirstN(t *testing.T) {
 			{"input", "$array"},
 		}},
 	})
+}
+
+func TestSetUnion(t *testing.T) {
+	assertExpr(t, SetUnion{"$items"}, bson.D{{"$setUnion", "$items"}})
 }
 
 func TestTopN(t *testing.T) {
