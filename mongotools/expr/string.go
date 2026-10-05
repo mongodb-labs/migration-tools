@@ -23,7 +23,7 @@ type Split [2]any
 var _ bson.Marshaler = Split{}
 
 func (s Split) D() bson.D {
-	return bson.D{{"$split", s[:]}}
+	return bson.D{{"$split", bson.A(s[:])}}
 }
 
 func (s Split) MarshalBSON() ([]byte, error) {
@@ -38,7 +38,7 @@ type SubstrBytes [3]any
 var _ bson.Marshaler = SubstrBytes{}
 
 func (s SubstrBytes) D() bson.D {
-	return bson.D{{"$substrBytes", s[:]}}
+	return bson.D{{"$substrBytes", bson.A(s[:])}}
 }
 
 func (s SubstrBytes) MarshalBSON() ([]byte, error) {
