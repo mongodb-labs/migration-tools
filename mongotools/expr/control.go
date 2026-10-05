@@ -61,7 +61,7 @@ type IfNull []any
 var _ bson.Marshaler = IfNull{}
 
 func (i IfNull) D() bson.D {
-	return bson.D{{"$ifNull", []any(i)}}
+	return bson.D{{"$ifNull", bson.A(i)}}
 }
 
 func (i IfNull) MarshalBSON() ([]byte, error) {
@@ -76,7 +76,7 @@ type Nor []any
 var _ bson.Marshaler = Nor{}
 
 func (n Nor) D() bson.D {
-	return bson.D{{"$nor", []any(n)}}
+	return bson.D{{"$nor", bson.A(n)}}
 }
 
 func (n Nor) MarshalBSON() ([]byte, error) {
