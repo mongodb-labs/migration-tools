@@ -72,7 +72,7 @@ type And []any
 var _ bson.Marshaler = And{}
 
 func (a And) D() bson.D {
-	return bson.D{{"$and", []any(a)}}
+	return bson.D{{"$and", bson.A(a)}}
 }
 
 func (a And) MarshalBSON() ([]byte, error) {
@@ -87,7 +87,7 @@ type Or []any
 var _ bson.Marshaler = Or{}
 
 func (o Or) D() bson.D {
-	return bson.D{{"$or", []any(o)}}
+	return bson.D{{"$or", bson.A(o)}}
 }
 
 func (o Or) MarshalBSON() ([]byte, error) {
@@ -102,7 +102,7 @@ type MergeObjects []any
 var _ bson.Marshaler = MergeObjects{}
 
 func (m MergeObjects) D() bson.D {
-	return bson.D{{"$mergeObjects", []any(m)}}
+	return bson.D{{"$mergeObjects", bson.A(m)}}
 }
 
 func (m MergeObjects) MarshalBSON() ([]byte, error) {
