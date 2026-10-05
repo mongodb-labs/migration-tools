@@ -73,7 +73,7 @@ type SetDifference [2]any
 var _ bson.Marshaler = SetDifference{}
 
 func (s SetDifference) D() bson.D {
-	return bson.D{{"$setDifference", [2]any(s)}}
+	return bson.D{{"$setDifference", bson.A(s[:])}}
 }
 
 func (s SetDifference) MarshalBSON() ([]byte, error) {
@@ -88,7 +88,7 @@ type SetIntersection []any
 var _ bson.Marshaler = SetIntersection{}
 
 func (s SetIntersection) D() bson.D {
-	return bson.D{{"$setIntersection", []any(s)}}
+	return bson.D{{"$setIntersection", bson.A(s)}}
 }
 
 func (s SetIntersection) MarshalBSON() ([]byte, error) {
@@ -105,7 +105,7 @@ type SetUnion []any
 var _ bson.Marshaler = SetUnion{}
 
 func (s SetUnion) D() bson.D {
-	return bson.D{{"$setUnion", []any(s)}}
+	return bson.D{{"$setUnion", bson.A(s)}}
 }
 
 func (s SetUnion) MarshalBSON() ([]byte, error) {

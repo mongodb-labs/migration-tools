@@ -8,7 +8,7 @@ type Eq [2]any
 var _ bson.Marshaler = Eq{}
 
 func (e Eq) D() bson.D {
-	return bson.D{{"$eq", [2]any(e)}}
+	return bson.D{{"$eq", bson.A(e[:])}}
 }
 
 func (e Eq) MarshalBSON() ([]byte, error) {
@@ -23,7 +23,7 @@ type Ne [2]any
 var _ bson.Marshaler = Ne{}
 
 func (n Ne) D() bson.D {
-	return bson.D{{"$ne", [2]any(n)}}
+	return bson.D{{"$ne", bson.A(n[:])}}
 }
 
 func (n Ne) MarshalBSON() ([]byte, error) {
@@ -38,7 +38,7 @@ type Gt [2]any
 var _ bson.Marshaler = Gt{}
 
 func (g Gt) D() bson.D {
-	return bson.D{{"$gt", [2]any(g)}}
+	return bson.D{{"$gt", bson.A(g[:])}}
 }
 
 func (g Gt) MarshalBSON() ([]byte, error) {
@@ -53,7 +53,7 @@ type Lt [2]any
 var _ bson.Marshaler = Lt{}
 
 func (l Lt) D() bson.D {
-	return bson.D{{"$lt", [2]any(l)}}
+	return bson.D{{"$lt", bson.A(l[:])}}
 }
 
 func (l Lt) MarshalBSON() ([]byte, error) {
@@ -68,7 +68,7 @@ type Lte [2]any
 var _ bson.Marshaler = Lte{}
 
 func (l Lte) D() bson.D {
-	return bson.D{{"$lte", [2]any(l)}}
+	return bson.D{{"$lte", bson.A(l[:])}}
 }
 
 func (l Lte) MarshalBSON() ([]byte, error) {
@@ -83,7 +83,7 @@ type Gte [2]any
 var _ bson.Marshaler = Gte{}
 
 func (g Gte) D() bson.D {
-	return bson.D{{"$gte", [2]any(g)}}
+	return bson.D{{"$gte", bson.A(g[:])}}
 }
 
 func (g Gte) MarshalBSON() ([]byte, error) {

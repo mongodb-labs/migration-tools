@@ -23,7 +23,7 @@ type Add []any
 var _ bson.Marshaler = Add{}
 
 func (a Add) D() bson.D {
-	return bson.D{{"$add", []any(a)}}
+	return bson.D{{"$add", bson.A(a)}}
 }
 
 func (a Add) MarshalBSON() ([]byte, error) {
@@ -38,7 +38,7 @@ type Mod [2]any
 var _ bson.Marshaler = Mod{}
 
 func (m Mod) D() bson.D {
-	return bson.D{{"$mod", [2]any(m)}}
+	return bson.D{{"$mod", bson.A(m[:])}}
 }
 
 func (m Mod) MarshalBSON() ([]byte, error) {
@@ -53,7 +53,7 @@ type Subtract [2]any
 var _ bson.Marshaler = Subtract{}
 
 func (s Subtract) D() bson.D {
-	return bson.D{{"$subtract", [2]any(s)}}
+	return bson.D{{"$subtract", bson.A(s[:])}}
 }
 
 func (s Subtract) MarshalBSON() ([]byte, error) {
