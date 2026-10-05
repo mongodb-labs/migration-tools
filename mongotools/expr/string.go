@@ -8,7 +8,7 @@ type Concat []any
 var _ bson.Marshaler = Concat{}
 
 func (c Concat) D() bson.D {
-	return bson.D{{"$concat", []any(c)}}
+	return bson.D{{"$concat", bson.A(c)}}
 }
 
 func (c Concat) MarshalBSON() ([]byte, error) {

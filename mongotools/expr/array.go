@@ -17,7 +17,7 @@ type Slice struct {
 var _ bson.Marshaler = Slice{}
 
 func (s Slice) D() bson.D {
-	args := []any{s.Array, s.N}
+	args := bson.A{s.Array, s.N}
 	if s.Position != nil {
 		args = slices.Insert(args, 1, *s.Position)
 	}
