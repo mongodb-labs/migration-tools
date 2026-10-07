@@ -46,12 +46,11 @@ func TestAssertCompareGreater_FailsWithCallerMessage(t *testing.T) {
 	timestamp2 := bson.Timestamp{T: 2, I: 2}
 
 	mockT := &failureCapturingT{}
-	AssertCompareGreater(mockT, timestamp1, timestamp2, "expected", 42)
+	AssertCompareGreater(mockT, timestamp1, timestamp2, "expected %d", 42)
 
 	assert.True(t, mockT.failed)
 	assert.Contains(t, mockT.message, "must exceed")
-	assert.Contains(t, mockT.message, "expected")
-	assert.Contains(t, mockT.message, "42")
+	assert.Contains(t, mockT.message, "expected 42")
 }
 
 func TestAssertCompareGreaterOrEqual(t *testing.T) {
