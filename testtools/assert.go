@@ -18,3 +18,10 @@ func AssertCompareGreater[T comparee[T]](t *testing.T, a, b T) {
 		t.Errorf("Expected %v to exceed %v", a, b)
 	}
 }
+
+// AssertCompareGreaterOrEqual asserts that a.Compare(b) >= 0.
+func AssertCompareGreaterOrEqual[T comparee[T]](t *testing.T, a, b T) {
+	if a.Compare(b) < 0 {
+		t.Errorf("Expected %v to equal or exceed %v", a, b)
+	}
+}

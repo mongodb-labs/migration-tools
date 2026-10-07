@@ -12,3 +12,11 @@ func TestAssertCompareGreater(t *testing.T) {
 
 	AssertCompareGreater(t, timestamp2, timestamp1)
 }
+
+func TestAssertCompareGreaterOrEqual(t *testing.T) {
+	timestamp1 := bson.Timestamp{T: 1, I: 1}
+	timestamp2 := bson.Timestamp{T: 2, I: 2}
+
+	AssertCompareGreaterOrEqual(t, timestamp2, timestamp2)
+	AssertCompareGreaterOrEqual(t, timestamp2, timestamp1)
+}
