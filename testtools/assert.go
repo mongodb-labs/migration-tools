@@ -16,11 +16,13 @@ var _ comparee[bson.Timestamp] = bson.Timestamp{}
 
 // AssertCompareGreater asserts that a.Compare(b) > 0.
 func AssertCompareGreater[T comparee[T]](
-	t *testing.T,
+	t assert.TestingT,
 	a, b T,
 	msgAndArgs ...any,
 ) {
-	t.Helper()
+	if realT, _ := t.(*testing.T); realT != nil {
+		realT.Helper()
+	}
 
 	if a.Compare(b) <= 0 {
 		assert.Fail(
@@ -33,11 +35,13 @@ func AssertCompareGreater[T comparee[T]](
 
 // AssertCompareGreaterOrEqual asserts that a.Compare(b) >= 0.
 func AssertCompareGreaterOrEqual[T comparee[T]](
-	t *testing.T,
+	t assert.TestingT,
 	a, b T,
 	msgAndArgs ...any,
 ) {
-	t.Helper()
+	if realT, _ := t.(*testing.T); realT != nil {
+		realT.Helper()
+	}
 
 	if a.Compare(b) < 0 {
 		assert.Fail(
