@@ -1,15 +1,10 @@
 package testtools
 
 import (
-<<<<<<< HEAD
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-=======
-	"testing"
-
->>>>>>> main
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
