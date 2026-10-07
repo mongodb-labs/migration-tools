@@ -6,7 +6,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func TestAssertLess(t *testing.T) {
+func TestAssertCompareGreater(t *testing.T) {
 	timestamp1 := bson.Timestamp{T: 1, I: 1}
 	timestamp2 := bson.Timestamp{T: 2, I: 2}
 
