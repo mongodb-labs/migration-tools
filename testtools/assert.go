@@ -20,7 +20,7 @@ func AssertCompareGreater[T comparee[T]](
 	a, b T,
 	msgAndArgs ...any,
 ) {
-	if realT, _ := t.(*testing.T); realT != nil {
+	if realT, ok := t.(*testing.T); ok {
 		realT.Helper()
 	}
 
@@ -39,7 +39,7 @@ func AssertCompareGreaterOrEqual[T comparee[T]](
 	a, b T,
 	msgAndArgs ...any,
 ) {
-	if realT, _ := t.(*testing.T); realT != nil {
+	if realT, ok := t.(*testing.T); ok {
 		realT.Helper()
 	}
 
