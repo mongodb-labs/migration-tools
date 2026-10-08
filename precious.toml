@@ -6,24 +6,24 @@
 # for example from editors on save. Slower tidiers should only be invoked manually, either by
 # running the relevant mage command or by explicitly running `precious` from the CLI.
 
-exclude = [
-    "vendor/**",
-]
+exclude = [".gocache/**", "go-pkg-forks/**", "vendor/**"]
 
 [commands.golangci-lint]
 type = "both"
-include = "**/*.go"
+include = "*.go"
 # Based on my local testing, this seemed like a reasonable value for this option.
 invoke.per-dir-or-once = 7
 working-dir = "root"
 path-args = "dir"
 cmd = [
-    "mise", "exec", "github:golangci/golangci-lint", "--",
+    "mise",
+    "exec",
+    "github:golangci/golangci-lint",
+    "--",
     "golangci-lint",
     "run",
-    "--allow-parallel-runners",
-    "--color", "always",
-    "--timeout", "5m",
+    "--color",
+    "always",
 ]
 tidy-flags = "--fix"
 ok-exit-codes = [0]
@@ -38,117 +38,230 @@ invoke.per-dir-or-once = 7
 working-dir = "root"
 path-args = "dir"
 cmd = [
-    "mise", "exec", "github:golangci/golangci-lint", "--",
+    "mise",
+    "exec",
+    "github:golangci/golangci-lint",
+    "--",
     "golangci-lint",
     "fmt",
-    "--color", "always",
+    "--color",
+    "always",
 ]
 ok-exit-codes = [0]
 lint-failure-exit-codes = [1]
-labels = [ "default", "fast-tidy" ]
+labels = ["default", "fast-tidy"]
 
 [commands."go fix"]
 type = "both"
 include = "*.go"
 invoke.per-dir-or-once = 7
-working-dir = "root"
-# What we really want is something like "dir-with-dot" so we get paths like "./verifier" instead of
-# "verifier", but absolute paths work okay. See
-# https://github.com/houseabsolute/precious/issues/104.
-path-args = "absolute-dir"
-cmd = [ "mise", "exec", "go", "--", "go", "fix", "-tags", "mstests,ruleguard" ]
+# Run go fix from each package directory with "." so that go fix uses the directory's own location
+# to anchor module resolution. Absolute paths passed from "root" working-dir fail with "outside main
+# module" in Go 1.26's revamped analysis-framework-based go fix in some environments (e.g. when
+# GOPATH is controlled by GVM rather than mise). Running with "." from inside each directory avoids
+# that sensitivity entirely.
+working-dir = "dir"
+path-args = "dot"
+cmd = ["mise", "exec", "go", "--", "go", "fix", "-tags", "mstests,ruleguard"]
 lint-flags = "-diff"
 ok-exit-codes = 0
 lint-failure-exit-codes = 1
-labels = [ "default", "fast-tidy" ]
+labels = ["default", "fast-tidy"]
 
 # We could run this via golangci-lint but we want to exclude more directories
 # for gosec than we do for other linting. There doesn't seem to be a way to
 # configure these excludes when running gosec as part of golangci-lint.
 [commands.gosec]
 type = "lint"
-include = "**/*.go"
+include = "*.go"
 exclude = [
     "cmd/**/*.go",
+    "etc/**/*.go",
+    "gorules/**/*.go",
+    "internal/mongosync/integration/**/*.go",
+    "internal/testutil/**/*.go",
+    "linting/**/*.go",
+    "mage.go",
+    "magefiles/**/*.go",
+    "release/**/*.go",
+    "resmoke/**/*.go",
+    "shared/testutil/**/*.go",
+    "verifier/testutil/**/*.go",
 ]
-invoke = "once"
+invoke.per-dir-or-once = 7
 working-dir = "root"
 path-args = "dir"
 # This wrapper lets us control the output with an env var so we can generate a
 # SARIF report in Evergreen but use the default format for linting.
-cmd = [ "$PRECIOUS_ROOT/etc/gosec-wrapper.sh", "-severity", "high", "-terse" ]
+cmd = ["$PRECIOUS_ROOT/etc/gosec-wrapper.sh", "-severity", "high", "-terse"]
 ok-exit-codes = [0]
 lint-failure-exit-codes = [1]
 
-[commands.prettier-yaml]
+[commands."ruff for tidying"]
 type = "both"
-invoke = "once"
-working-dir = "root"
-path-args = "file"
-include = [ "**/*.yml", "**/*.yaml" ]
-cmd = [ "mise", "exec", "npm:prettier", "--", "prettier" ]
-lint-flags = "--check"
-tidy-flags = "--write"
-ok-exit-codes = [0]
-lint-failure-exit-codes = [1]
-ignore-stderr = ".*"
-
-[commands.prettier-json]
-type = "both"
-invoke = "once"
-working-dir = "root"
-path-args = "file"
-include = [ "**/*.json", "**/*.json" ]
-cmd = [ "mise", "exec", "npm:prettier", "--", "prettier" ]
-lint-flags = "--check"
-tidy-flags = "--write"
-ok-exit-codes = [0]
-lint-failure-exit-codes = [1]
-ignore-stderr = ".*"
-
-[commands.prettier-md]
-type = "both"
-invoke = "once"
-working-dir = "root"
-path-args = "file"
-include = [ "*.md" ]
-cmd = [
-    "mise", "exec", "npm:prettier", "--",
-    "prettier",
-    "--print-width", "100",
-    "--prose-wrap", "always",
+include = "*.py"
+exclude = [
+    # These excluded files are code that was forked from the code in the
+    # `mongo` repo.  We may need to merge changes from those forked files in
+    # the future, and tidying them would make that much harder, unfortunately.
+    "resmoke/mongosync/testing/fixtures/__init__.py",
+    "resmoke/mongosync/testing/fixtures/_builder.py",
+    "resmoke/mongosync/testing/fixtures/replicaset.py",
+    "resmoke/mongosync/testing/fixtures/shardedcluster.py",
+    "resmoke/mongosync/testing/fixtures/standalone.py",
 ]
+invoke = "once"
+working-dir = "root"
+path-args = "file"
+cmd = ["mise", "exec", "github:astral-sh/ruff", "--", "ruff"]
+tidy-flags = ["format", "--line-length", "100"]
+lint-flags = ["format", "--diff", "--line-length", "100"]
+ok-exit-codes = [0]
+lint-failure-exit-codes = [1]
+# It seems print the output from "format --diff" to stderr :(
+ignore-stderr = ".*"
+labels = ["default", "fast-tidy"]
+
+[commands."ruff for linting"]
+type = "both"
+include = "*.py"
+exclude = [
+    # This should match the list we use with "ruff for tidying".
+    "resmoke/mongosync/testing/fixtures/__init__.py",
+    "resmoke/mongosync/testing/fixtures/_builder.py",
+    "resmoke/mongosync/testing/fixtures/replicaset.py",
+    "resmoke/mongosync/testing/fixtures/shardedcluster.py",
+    "resmoke/mongosync/testing/fixtures/standalone.py",
+]
+invoke = "once"
+working-dir = "root"
+path-args = "file"
+cmd = ["mise", "exec", "github:astral-sh/ruff", "--", "ruff"]
+tidy-flags = ["check", "--fix"]
+lint-flags = ["check", "--output-format", "full"]
+ok-exit-codes = [0]
+lint-failure-exit-codes = [1]
+
+[commands.oxfmt]
+type = "both"
+invoke = "once"
+working-dir = "root"
+path-args = "file"
+include = ["*.json", "*.md", "*.toml", "*.yml", "*.yaml"]
+exclude = [".github/pull_request_template.md", "package-lock.json"]
+cmd = ["mise", "exec", "npm:oxfmt", "--", "oxfmt"]
 lint-flags = "--check"
 tidy-flags = "--write"
 ok-exit-codes = [0]
 lint-failure-exit-codes = [1]
-ignore-stderr = ".*"
+labels = ["default", "fast-tidy"]
+
+[commands.oxfmt-js]
+type = "both"
+invoke = "once"
+working-dir = "root"
+path-args = "file"
+include = [
+    # We only want to include JS files that are _not_ modified copies of files from the mongo repo. If
+    # we format these forked files it makes it much harder to apply updates from the mongo repo later.
+    #
+    # Tests we've created and test helper code for them.
+    "resmoke/jstests/**/*.test.js",
+    "resmoke/jstests/testlib/**/*.js",
+
+    # Some of these libs are forks, some are ours.
+    "resmoke/jstests/concurrency/fsm_libs/**/*.js",
+    "!resmoke/jstests/concurrency/fsm_libs/extend_workload.js",
+    "!resmoke/jstests/concurrency/fsm_libs/parse_config.js",
+
+    # Same for workloads.
+    "resmoke/jstests/concurrency/fsm_workloads/**/*.js",
+    "!resmoke/jstests/concurrency/fsm_workloads/sharded_base_partitioned.js",
+
+    # All of this is our code.
+    "resmoke/jstests/hooks/**/*.js",
+    "resmoke/jstests/libs/**/*.js",
+    "resmoke/jstests/overrides/**/*.js",
+    "eslint.config.mjs",
+]
+cmd = ["mise", "exec", "npm:oxfmt", "--", "oxfmt"]
+lint-flags = "--check"
+tidy-flags = "--write"
+ok-exit-codes = [0]
+lint-failure-exit-codes = [1]
+labels = ["default", "fast-tidy"]
+
+[commands.eslint]
+type = "lint"
+cmd = ["mise", "exec", "npm:eslint", "--", "eslint"]
+ok-exit-codes = 0
+invoke = "once"
+working-dir = "root"
+path-args = "file"
+include = [
+    # We only want to include JS files that are _not_ modified copies of files from the mongo repo. If
+    # we format these forked files it makes it much harder to apply updates from the mongo repo later.
+    #
+    # Tests we've created and test helper code for them.
+    "resmoke/jstests/**/*.test.js",
+    "resmoke/jstests/testlib/**/*.js",
+
+    # We skip linting these for now since they use a bunch of global imports
+    # and are generally a bit messy.
+    "!resmoke/jstests/concurrency/**/*.js",
+
+    # All of this is our code.
+    "resmoke/jstests/hooks/**/*.js",
+    "resmoke/jstests/libs/**/*.js",
+    "resmoke/jstests/overrides/**/*.js",
+    "eslint.config.mjs",
+]
 
 [commands.omegasort-gitignore]
 type = "both"
 include = "**/.gitignore"
-cmd = [ "mise", "exec", "github:houseabsolute/omegasort", "--", "omegasort", "--sort=path", "--comment-prefix=# ", "--unique" ]
+cmd = [
+    "mise",
+    "exec",
+    "github:houseabsolute/omegasort",
+    "--",
+    "omegasort",
+    "--sort=gitignore",
+    "--unique",
+]
 lint-flags = "--check"
 tidy-flags = "--in-place"
 ok-exit-codes = 0
 lint-failure-exit-codes = 1
 ignore-stderr = ".*"
+labels = ["default", "fast-tidy"]
 
 [commands.shellcheck]
 type = "lint"
-include = "**/*.sh"
-cmd = [ "mise", "exec", "github:koalaman/shellcheck", "--", "shellcheck", "--color=always", "--external-sources" ]
+include = "*.sh"
+exclude = "etc/mise.run.sh"
+cmd = [
+    "mise",
+    "exec",
+    "github:koalaman/shellcheck",
+    "--",
+    "shellcheck",
+    "--color=always",
+    "--external-sources",
+]
 ok-exit-codes = 0
 lint-failure-exit-codes = 1
 
 [commands.shfmt]
 type = "both"
-include = "**/*.sh"
-cmd = [ "mise", "exec", "github:mvdan/sh", "--", "shfmt", "--simplify", "--indent", "4" ]
+include = "*.sh"
+exclude = "etc/mise.run.sh"
+cmd = ["mise", "exec", "github:mvdan/sh", "--", "shfmt", "--simplify", "--indent", "4"]
 lint-flags = "--diff"
 tidy-flags = "--write"
 ok-exit-codes = 0
 lint-failure-exit-codes = 1
+labels = ["default", "fast-tidy"]
 
 [commands.github-codeowners]
 type = "lint"
@@ -156,20 +269,17 @@ invoke = "once"
 path-args = "none"
 # We need to run this whenever new files are added to make sure they have an owner, so it's easiest
 # to just apply this linter to all files.
-include = "**/*"
-cmd = [ "$PRECIOUS_ROOT/etc/github-codeowners-wrapper.sh" ]
+include = "*"
+cmd = ["$PRECIOUS_ROOT/etc/github-codeowners-wrapper.sh"]
 ok-exit-codes = 0
 lint-failure-exit-codes = 1
+labels = ["default", "fast-tidy"]
 
 [commands.typos]
 type = "both"
-include = "**/*"
-exclude = [
-    ".golangci.yml",
-    ".mailmap",
-    "go.mod",
-]
-cmd = [ "typos", "--sort" ]
+include = "*"
+exclude = [".golangci.yml", ".mailmap", "go.mod"]
+cmd = ["typos", "--sort"]
 tidy-flags = "--write-changes"
 invoke = "once"
 ok-exit-codes = 0
@@ -181,11 +291,10 @@ include = ".github/**/*.yml"
 invoke = "once"
 path-args = "none"
 working-dir = "root"
-cmd = [ "mise", "exec", "zizmor", "--", "zizmor", "--persona", "pedantic", "." ]
+cmd = ["mise", "exec", "zizmor", "--", "zizmor", "--persona", "pedantic", "."]
 ok-exit-codes = 0
-# zizmor exits with 11-14 depending on the severity of the worst finding. Every
-# other non-zero code means zizmor itself failed - 1 for an audit error, 2 for
-# bad arguments, 3 for collecting no inputs at all - and none of those are lint
-# failures, so precious should treat them as hard errors.
+# zizmor exits with 11-14 depending on the severity of the worst finding. Every other non-zero code
+# means zizmor itself failed - 1 for an audit error, 2 for bad arguments, 3 for collecting no inputs
+# at all - and none of those are lint failures, so precious should treat them as hard errors.
 lint-failure-exit-codes = [11, 12, 13, 14]
 expect-stderr = true
