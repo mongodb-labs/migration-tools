@@ -1,17 +1,25 @@
 version: "2"
+
+run:
+  allow-parallel-runners: true
+  timeout: 5m
+
 linters:
   default: none
   enable:
     - copyloopvar
     - cyclop
+    - depguard
     - dupword
     - errcheck
     - errname
     - errorlint
     - exptostd
+    - forbidigo
     - funlen
     - gocheckcompilerdirectives
     - gocognit
+    - gocritic
     - gocyclo
     - godot
     - govet
@@ -36,6 +44,21 @@ linters:
     - usetesting
 
   settings:
+    depguard:
+      rules:
+        one-yaml-package:
+          list-mode: lax
+          deny:
+            - pkg: gopkg.in/yaml.v3
+              desc: This package is unmaintained; use github.com/goccy/go-yaml instead.
+        # The 3rd-party set package we use imports v1 of the bson package, and it's very easy to
+        # accidentally let this slip in via goimports; this rule notices that.
+        driver-v2:
+          list-mode: lax
+          deny:
+            - pkg: go.mongodb.org/mongo-driver/bson
+              desc: Use the v2 package (go.mongodb.org/mongo-driver/v2/bson) instead
+
     errcheck:
       check-blank: true
       check-type-assertions: true
@@ -169,6 +192,12 @@ linters:
     presets:
       - comments
       - std-error-handling
+
+    paths:
+      - go-pkg-forks
+      # If we override the defaults we have to specify this ourselves.
+      - .gocache
+      - vendor
 
     rules:
       - text: 'composites: .+bson\.(Binary|E|Timestamp) struct literal uses unkeyed fields'
