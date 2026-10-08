@@ -415,3 +415,107 @@ func TestReplaceInRaw_EmbeddedDocumentBugs(t *testing.T) {
 		"'trailing_sibling' must be unmodified",
 	)
 }
+
+func TestAppendInRaw_Root(t *testing.T) {
+	raw := lo.Must(bson.Marshal(bson.D{{"a", int32(1)}}))
+
+	raw, err := AppendInRaw(raw, "b", ToRawValue("hello"))
+	require.NoError(t, err)
+
+	var outDoc bson.D
+	require.NoError(t, bson.Unmarshal(raw, &outDoc))
+
+	assert.Equal(
+		t,
+		bson.D{{"a", int32(1)}, {"b", "hello"}},
+		outDoc,
+	)
+}
+
+func TestAppendInRaw_Nested(t *testing.T) {
+	raw := lo.Must(bson.Marshal(bson.D{
+		{"role", bson.D{{"title", "engineer"}}},
+		{"trailing_sibling", "do_not_lose_me"},
+	}))
+
+	raw, err := AppendInRaw(raw, "level", ToRawValue("admin"), "role")
+	require.NoError(t, err)
+
+	result := bson.Raw(raw)
+	require.NoError(t, result.Validate())
+
+	assert.Equal(t, "admin", lo.Must(result.LookupErr("role", "level")).StringValue())
+	assert.Equal(t, "engineer", lo.Must(result.LookupErr("role", "title")).StringValue())
+	assert.Equal(t, "do_not_lose_me", lo.Must(result.LookupErr("trailing_sibling")).StringValue())
+}
+
+func TestAppendInRaw_ThroughArray(t *testing.T) {
+	raw := lo.Must(bson.Marshal(bson.D{
+		{"arr", bson.A{bson.D{{"a", int32(1)}}}},
+	}))
+
+	raw, err := AppendInRaw(raw, "b", ToRawValue("appended"), "arr", "0")
+	require.NoError(t, err)
+
+	result := bson.Raw(raw)
+	require.NoError(t, result.Validate())
+	assert.Equal(t, "appended", lo.Must(result.LookupErr("arr", "0", "b")).StringValue())
+}
+
+func TestAppendInRaw_Errors(t *testing.T) {
+	cases := []struct {
+		label   string
+		doc     bson.D
+		field   string
+		pointer []string
+		check   func(t *testing.T, err error)
+	}{
+		{
+			label:   "missing element",
+			doc:     bson.D{{"a", int32(1)}},
+			field:   "b",
+			pointer: []string{"nope"},
+		},
+		{
+			label:   "final node is scalar",
+			doc:     bson.D{{"a", int32(1)}},
+			field:   "b",
+			pointer: []string{"a"},
+		},
+		{
+			label:   "nonfinal node is scalar",
+			doc:     bson.D{{"a", int32(1)}},
+			field:   "b",
+			pointer: []string{"a", "c"},
+			check: func(t *testing.T, err error) {
+				var pe PointerTooDeepError
+				assert.ErrorAs(t, err, &pe)
+			},
+		},
+		{
+			label: "duplicate field name",
+			doc:   bson.D{{"a", int32(1)}},
+			field: "a",
+		},
+	}
+
+	for _, curCase := range cases {
+		t.Run(curCase.label, func(t *testing.T) {
+			raw := lo.Must(bson.Marshal(curCase.doc))
+
+			newRaw, err := AppendInRaw(raw, curCase.field, ToRawValue("x"), curCase.pointer...)
+			require.Error(t, err)
+
+			// The returned document, when non-nil, must be unmodified.
+			if newRaw != nil {
+				var outDoc bson.D
+				require.NoError(t, bson.Unmarshal(newRaw, &outDoc))
+				assert.Equal(t, curCase.doc, outDoc)
+			}
+
+			if curCase.check != nil {
+				curCase.check(t, err)
+			}
+		})
+	}
+}
