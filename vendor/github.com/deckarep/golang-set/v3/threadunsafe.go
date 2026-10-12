@@ -46,23 +46,38 @@ func newThreadUnsafeSetWithSize[T comparable](cardinality int) *threadUnsafeSet[
 	return &t
 }
 
-func (s threadUnsafeSet[T]) Add(v T) bool {
-	prevLen := len(s)
-	s[v] = struct{}{}
-	return prevLen != len(s)
-}
-
-func (s *threadUnsafeSet[T]) Append(v ...T) int {
+func (s *threadUnsafeSet[T]) Add(v T) bool {
 	prevLen := len(*s)
-	for _, val := range v {
-		(*s)[val] = struct{}{}
-	}
-	return len(*s) - prevLen
+	s.add(v)
+	return prevLen != len(*s)
 }
 
 // private version of Add which doesn't return a value
 func (s *threadUnsafeSet[T]) add(v T) {
 	(*s)[v] = struct{}{}
+}
+
+func (s *threadUnsafeSet[T]) Append(vs ...T) int {
+	prevLen := len(*s)
+	s.append(vs...)
+	return len(*s) - prevLen
+}
+
+// private version of Append which doesn't return a value
+func (s *threadUnsafeSet[T]) append(vs ...T) {
+	for _, v := range vs {
+		s.add(v)
+	}
+}
+
+func (s *threadUnsafeSet[T]) AppendFrom(other Set[T]) int {
+	o := other.(*threadUnsafeSet[T])
+
+	prevLen := s.Cardinality()
+	for elem := range *o {
+		s.add(elem)
+	}
+	return s.Cardinality() - prevLen
 }
 
 func (s *threadUnsafeSet[T]) Cardinality() int {
@@ -79,16 +94,13 @@ func (s *threadUnsafeSet[T]) Clear() {
 }
 
 func (s *threadUnsafeSet[T]) Clone() Set[T] {
-	clonedSet := newThreadUnsafeSetWithSize[T](s.Cardinality())
-	for elem := range *s {
-		clonedSet.add(elem)
-	}
-	return clonedSet
+	t := threadUnsafeSet[T](mapclone(*s))
+	return &t
 }
 
 func (s *threadUnsafeSet[T]) Contains(v ...T) bool {
 	for _, val := range v {
-		if _, ok := (*s)[val]; !ok {
+		if !s.contains(val) {
 			return false
 		}
 	}
@@ -96,13 +108,12 @@ func (s *threadUnsafeSet[T]) Contains(v ...T) bool {
 }
 
 func (s *threadUnsafeSet[T]) ContainsOne(v T) bool {
-	_, ok := (*s)[v]
-	return ok
+	return s.contains(v)
 }
 
 func (s *threadUnsafeSet[T]) ContainsAny(v ...T) bool {
 	for _, val := range v {
-		if _, ok := (*s)[val]; ok {
+		if s.contains(val) {
 			return true
 		}
 	}
@@ -131,20 +142,20 @@ func (s *threadUnsafeSet[T]) ContainsAnyElement(other Set[T]) bool {
 
 // private version of Contains for a single element v
 func (s *threadUnsafeSet[T]) contains(v T) (ok bool) {
-	_, ok = (*s)[v]
-	return ok
+	_, found := (*s)[v]
+	return found
 }
 
 func (s *threadUnsafeSet[T]) Difference(other Set[T]) Set[T] {
 	o := other.(*threadUnsafeSet[T])
 
-	diff := newThreadUnsafeSet[T]()
+	diff := make(threadUnsafeSet[T], s.Cardinality())
 	for elem := range *s {
 		if !o.contains(elem) {
 			diff.add(elem)
 		}
 	}
-	return diff
+	return &diff
 }
 
 func (s *threadUnsafeSet[T]) Each(cb func(T) bool) {
@@ -153,6 +164,16 @@ func (s *threadUnsafeSet[T]) Each(cb func(T) bool) {
 			break
 		}
 	}
+}
+
+func (s *threadUnsafeSet[T]) Filter(cb func(T) bool) Set[T] {
+	mappedSet := newThreadUnsafeSetWithSize[T](s.Cardinality())
+	for elem := range *s {
+		if cb(elem) {
+			mappedSet.add(elem)
+		}
+	}
+	return mappedSet
 }
 
 func (s *threadUnsafeSet[T]) Equal(other Set[T]) bool {
@@ -172,26 +193,28 @@ func (s *threadUnsafeSet[T]) Equal(other Set[T]) bool {
 func (s *threadUnsafeSet[T]) Intersect(other Set[T]) Set[T] {
 	o := other.(*threadUnsafeSet[T])
 
-	intersection := newThreadUnsafeSet[T]()
+	var intersection threadUnsafeSet[T]
 	// loop over smaller set
 	if s.Cardinality() < other.Cardinality() {
+		intersection = make(threadUnsafeSet[T], s.Cardinality())
 		for elem := range *s {
 			if o.contains(elem) {
 				intersection.add(elem)
 			}
 		}
 	} else {
+		intersection = make(threadUnsafeSet[T], o.Cardinality())
 		for elem := range *o {
 			if s.contains(elem) {
 				intersection.add(elem)
 			}
 		}
 	}
-	return intersection
+	return &intersection
 }
 
 func (s *threadUnsafeSet[T]) IsEmpty() bool {
-	return s.Cardinality() == 0
+	return len(*s) == 0
 }
 
 func (s *threadUnsafeSet[T]) IsProperSubset(other Set[T]) bool {
@@ -213,6 +236,10 @@ func (s *threadUnsafeSet[T]) IsSubset(other Set[T]) bool {
 		}
 	}
 	return true
+}
+
+func (s *threadUnsafeSet[T]) IsDisjoint(other Set[T]) bool {
+	return !s.ContainsAnyElement(other)
 }
 
 func (s *threadUnsafeSet[T]) IsSuperset(other Set[T]) bool {
@@ -259,6 +286,27 @@ func (s *threadUnsafeSet[T]) Pop() (v T, ok bool) {
 	return v, false
 }
 
+func (s *threadUnsafeSet[T]) PopN(n int) (items []T, count int) {
+	if n <= 0 || len(*s) == 0 {
+		return make([]T, 0), 0
+	}
+	sn := s.Cardinality()
+	if n > sn {
+		n = sn
+	}
+
+	items = make([]T, 0, sn)
+	for item := range *s {
+		if count >= n {
+			break
+		}
+		delete(*s, item)
+		items = append(items, item)
+		count++
+	}
+	return items, count
+}
+
 func (s threadUnsafeSet[T]) Remove(v T) {
 	delete(s, v)
 }
@@ -281,7 +329,9 @@ func (s threadUnsafeSet[T]) String() string {
 func (s *threadUnsafeSet[T]) SymmetricDifference(other Set[T]) Set[T] {
 	o := other.(*threadUnsafeSet[T])
 
-	sd := newThreadUnsafeSet[T]()
+	// maximum number of elements is the sum of s and o cardinalities (when s and o are disjoint)
+	n := s.Cardinality() + o.Cardinality()
+	sd := make(threadUnsafeSet[T], n)
 	for elem := range *s {
 		if !o.contains(elem) {
 			sd.add(elem)
@@ -292,11 +342,11 @@ func (s *threadUnsafeSet[T]) SymmetricDifference(other Set[T]) Set[T] {
 			sd.add(elem)
 		}
 	}
-	return sd
+	return &sd
 }
 
 func (s threadUnsafeSet[T]) ToSlice() []T {
-	keys := make([]T, 0, s.Cardinality())
+	keys := make([]T, 0, len(s))
 	for elem := range s {
 		keys = append(keys, elem)
 	}
@@ -307,10 +357,8 @@ func (s threadUnsafeSet[T]) ToSlice() []T {
 func (s threadUnsafeSet[T]) Union(other Set[T]) Set[T] {
 	o := other.(*threadUnsafeSet[T])
 
-	n := s.Cardinality()
-	if o.Cardinality() > n {
-		n = o.Cardinality()
-	}
+	// maximum number of elements is the sum of s and o cardinalities (when s and o are disjoint)
+	n := s.Cardinality() + o.Cardinality()
 	unionedSet := make(threadUnsafeSet[T], n)
 
 	for elem := range s {
@@ -324,18 +372,7 @@ func (s threadUnsafeSet[T]) Union(other Set[T]) Set[T] {
 
 // MarshalJSON creates a JSON array from the set, it marshals all elements
 func (s threadUnsafeSet[T]) MarshalJSON() ([]byte, error) {
-	items := make([]string, 0, s.Cardinality())
-
-	for elem := range s {
-		b, err := json.Marshal(elem)
-		if err != nil {
-			return nil, err
-		}
-
-		items = append(items, string(b))
-	}
-
-	return []byte(fmt.Sprintf("[%s]", strings.Join(items, ","))), nil
+	return json.Marshal(s.ToSlice())
 }
 
 // UnmarshalJSON recreates a set from a JSON array, it only decodes
@@ -346,7 +383,7 @@ func (s *threadUnsafeSet[T]) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
-	s.Append(i...)
+	s.append(i...)
 
 	return nil
 }

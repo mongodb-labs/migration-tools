@@ -77,7 +77,7 @@ linters:
 
     importas:
       alias:
-        - pkg: github.com/deckarep/golang-set/v2
+        - pkg: github.com/deckarep/golang-set/v3
           alias: mapset
       no-extra-aliases: true
 

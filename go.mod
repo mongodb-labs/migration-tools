@@ -4,7 +4,7 @@ go 1.25.7
 
 require (
 	github.com/ccoveille/go-safecast/v2 v2.0.1
-	github.com/deckarep/golang-set/v2 v2.8.0
+	github.com/deckarep/golang-set/v3 v3.0.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/go-cmp v0.7.0
 	github.com/jaypipes/ghw v0.24.0
