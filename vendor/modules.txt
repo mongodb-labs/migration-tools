@@ -4,9 +4,9 @@ github.com/ccoveille/go-safecast/v2
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
-# github.com/deckarep/golang-set/v2 v2.8.0
-## explicit; go 1.18
-github.com/deckarep/golang-set/v2
+# github.com/deckarep/golang-set/v3 v3.0.0
+## explicit; go 1.25
+github.com/deckarep/golang-set/v3
 # github.com/dustin/go-humanize v1.0.1
 ## explicit; go 1.16
 github.com/dustin/go-humanize

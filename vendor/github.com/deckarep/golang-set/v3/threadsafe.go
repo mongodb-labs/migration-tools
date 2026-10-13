@@ -25,17 +25,13 @@ SOFTWARE.
 
 package mapset
 
-import "sync"
+import (
+	"sync"
+)
 
 type threadSafeSet[T comparable] struct {
 	sync.RWMutex
 	uss *threadUnsafeSet[T]
-}
-
-func newThreadSafeSet[T comparable]() *threadSafeSet[T] {
-	return &threadSafeSet[T]{
-		uss: newThreadUnsafeSet[T](),
-	}
 }
 
 func newThreadSafeSetWithSize[T comparable](cardinality int) *threadSafeSet[T] {
@@ -56,6 +52,17 @@ func (t *threadSafeSet[T]) Append(v ...T) int {
 	ret := t.uss.Append(v...)
 	t.Unlock()
 	return ret
+}
+
+func (t *threadSafeSet[T]) AppendFrom(other Set[T]) int {
+	o := other.(*threadSafeSet[T])
+
+	t.Lock()  // Write Lock
+	o.RLock() // Read Lock
+	defer t.Unlock()
+	defer o.RUnlock()
+
+	return t.uss.AppendFrom(o.uss)
 }
 
 func (t *threadSafeSet[T]) Contains(v ...T) bool {
@@ -106,6 +113,18 @@ func (t *threadSafeSet[T]) IsSubset(other Set[T]) bool {
 	o.RLock()
 
 	ret := t.uss.IsSubset(o.uss)
+	t.RUnlock()
+	o.RUnlock()
+	return ret
+}
+
+func (t *threadSafeSet[T]) IsDisjoint(other Set[T]) bool {
+	o := other.(*threadSafeSet[T])
+
+	t.RLock()
+	o.RLock()
+
+	ret := t.uss.IsDisjoint(o.uss)
 	t.RUnlock()
 	o.RUnlock()
 	return ret
@@ -208,12 +227,24 @@ func (t *threadSafeSet[T]) Cardinality() int {
 
 func (t *threadSafeSet[T]) Each(cb func(T) bool) {
 	t.RLock()
+	defer t.RUnlock()
 	for elem := range *t.uss {
 		if cb(elem) {
 			break
 		}
 	}
-	t.RUnlock()
+}
+
+func (t *threadSafeSet[T]) Filter(cb func(T) bool) Set[T] {
+	t.RLock()
+	defer t.RUnlock()
+	mappedSet := newThreadSafeSetWithSize[T](t.uss.Cardinality())
+	for elem := range *t.uss {
+		if cb(elem) {
+			mappedSet.uss.add(elem)
+		}
+	}
+	return mappedSet
 }
 
 func (t *threadSafeSet[T]) Iter() <-chan T {
@@ -285,9 +316,16 @@ func (t *threadSafeSet[T]) Pop() (T, bool) {
 	return t.uss.Pop()
 }
 
+func (t *threadSafeSet[T]) PopN(n int) ([]T, int) {
+	t.Lock()
+	defer t.Unlock()
+	return t.uss.PopN(n)
+}
+
 func (t *threadSafeSet[T]) ToSlice() []T {
-	keys := make([]T, 0, t.Cardinality())
 	t.RLock()
+	l := len(*t.uss)
+	keys := make([]T, 0, l)
 	for elem := range *t.uss {
 		keys = append(keys, elem)
 	}
@@ -304,9 +342,9 @@ func (t *threadSafeSet[T]) MarshalJSON() ([]byte, error) {
 }
 
 func (t *threadSafeSet[T]) UnmarshalJSON(p []byte) error {
-	t.RLock()
+	t.Lock()
 	err := t.uss.UnmarshalJSON(p)
-	t.RUnlock()
+	t.Unlock()
 
 	return err
 }
