@@ -135,6 +135,28 @@ func (gf GetField) MarshalBSON() ([]byte, error) {
 
 // ---------------------------------------------
 
+// UnsetField is the $unsetField operator.
+type UnsetField struct {
+	Field, Input any
+}
+
+var _ bson.Marshaler = UnsetField{}
+
+func (uf UnsetField) D() bson.D {
+	return bson.D{
+		{"$unsetField", bson.D{
+			{"field", uf.Field},
+			{"input", uf.Input},
+		}},
+	}
+}
+
+func (uf UnsetField) MarshalBSON() ([]byte, error) {
+	return bson.Marshal(uf.D())
+}
+
+// ---------------------------------------------
+
 // Let is the $let operator.
 type Let struct {
 	Vars, In any
