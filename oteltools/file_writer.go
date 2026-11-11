@@ -153,8 +153,14 @@ func (fw *fileWriter) writeOnce() error {
 		return fmt.Errorf("encoding metrics export as JSON: %w", err)
 	}
 
-	if _, err := fw.writer.Write(line.Bytes()); err != nil {
+	wrote, err := fw.writer.Write(line.Bytes())
+
+	if err != nil {
 		return fmt.Errorf("writing metrics export: %w", err)
+	}
+
+	if wrote != line.Len() {
+		return fmt.Errorf("incomplete write: only %d of %d bytes", wrote, line.Len())
 	}
 
 	return nil

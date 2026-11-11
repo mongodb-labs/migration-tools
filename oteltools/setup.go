@@ -55,6 +55,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/otel/attribute"
 	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
 	otelmetric "go.opentelemetry.io/otel/metric"
@@ -88,11 +89,12 @@ type Settings struct {
 
 	// MetricsOut, if set, receives one export every ExportInterval, in the
 	// format that the package documentation describes. Each export is one
-	// line, written in a single Write call. The pipeline owns the writer from
-	// then on: Pipeline.Shutdown closes it if it implements io.Closer.
+	// line, written in a single Write call. The pipeline never closes the
+	// writer. It writes nothing more once Pipeline.Shutdown returns, so the
+	// caller can close the writer then.
 	MetricsOut option.Option[io.Writer]
 
-	// ExportInterval is how often metrics are written to MetricsFile.
+	// ExportInterval is how often metrics are written to MetricsOut.
 	// If unset, DefaultExportInterval is used. Setup fails if it is set to
 	// zero or a negative duration.
 	ExportInterval option.Option[time.Duration]
@@ -103,7 +105,6 @@ type Pipeline struct {
 	provider *sdkmetric.MeterProvider
 	handler  http.Handler
 	file     option.Option[*fileWriter]
-	writer   option.Option[io.Writer]
 
 	shutdownOnce sync.Once
 	shutdownErr  error
@@ -124,9 +125,9 @@ func (p *Pipeline) Handler() http.Handler {
 	return p.handler
 }
 
-// Shutdown writes the last export to the metrics file, shuts down the meter
-// provider, and closes the metrics file if it implements io.Closer. Call it
-// before the program exits. Later calls return the first call’s result.
+// Shutdown writes the last export to MetricsOut, if set, and shuts down the
+// meter provider. Call it before the program exits. Later calls return the
+// first call’s result.
 func (p *Pipeline) Shutdown(ctx context.Context) error {
 	p.shutdownOnce.Do(func() {
 		var errs []error
@@ -141,14 +142,6 @@ func (p *Pipeline) Shutdown(ctx context.Context) error {
 
 		if err := p.provider.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("shutting down meter provider: %w", err))
-		}
-
-		if w, has := p.writer.Get(); has {
-			if closer, ok := w.(io.Closer); ok {
-				if err := closer.Close(); err != nil {
-					errs = append(errs, fmt.Errorf("closing metrics file: %w", err))
-				}
-			}
 		}
 
 		p.shutdownErr = errors.Join(errs...)
@@ -177,7 +170,18 @@ func Setup(settings Settings) (*Pipeline, error) {
 
 	registry := prometheus.NewRegistry()
 
-	if err := registerRuntimeCollectors(registry); err != nil {
+	res := cmp.Or(settings.Resource, resource.Empty())
+
+	// The exporter adds resource labels only to its own series, so give the
+	// runtime collectors’ series the same labels.
+	labels, err := resourceLabels(res, settings.ResourceLabels)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := registerRuntimeCollectors(
+		prometheus.WrapRegistererWith(labels, registry),
+	); err != nil {
 		return nil, err
 	}
 
@@ -194,8 +198,6 @@ func Setup(settings Settings) (*Pipeline, error) {
 		return nil, fmt.Errorf("creating Prometheus exporter: %w", err)
 	}
 
-	res := cmp.Or(settings.Resource, resource.Empty())
-
 	provider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
 		sdkmetric.WithExemplarFilter(exemplar.AlwaysOffFilter),
@@ -211,7 +213,6 @@ func Setup(settings Settings) (*Pipeline, error) {
 				ErrorHandling: promhttp.ContinueOnError,
 			},
 		),
-		writer: settings.MetricsOut,
 	}
 
 	if writer, has := settings.MetricsOut.Get(); has {
@@ -223,12 +224,39 @@ func Setup(settings Settings) (*Pipeline, error) {
 	return pipeline, nil
 }
 
-func registerRuntimeCollectors(registry *prometheus.Registry) error {
+// resourceLabels returns the resource attributes that filter allows, as
+// Prometheus labels named the way the OTel Prometheus exporter names them for
+// WithResourceAsConstantLabels. If filter is nil, it returns no labels, just
+// as the exporter then puts resource attributes only on target_info.
+func resourceLabels(res *resource.Resource, filter attribute.Filter) (prometheus.Labels, error) {
+	labels := prometheus.Labels{}
+	if filter == nil {
+		return labels, nil
+	}
+
+	// The exporter escapes label names (UTF8Allowed: false) because Setup
+	// uses its default translation strategy, which escapes.
+	namer := otlptranslator.LabelNamer{UTF8Allowed: false}
+
+	allowed, _ := res.Set().Filter(filter)
+	for _, kv := range allowed.ToSlice() {
+		name, err := namer.Build(string(kv.Key))
+		if err != nil {
+			return nil, fmt.Errorf("naming label for resource attribute %#q: %w", kv.Key, err)
+		}
+
+		labels[name] = kv.Value.String()
+	}
+
+	return labels, nil
+}
+
+func registerRuntimeCollectors(registerer prometheus.Registerer) error {
 	for _, c := range []prometheus.Collector{
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	} {
-		if err := registry.Register(c); err != nil {
+		if err := registerer.Register(c); err != nil {
 			return fmt.Errorf("registering runtime collector: %w", err)
 		}
 	}

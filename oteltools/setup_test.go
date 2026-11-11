@@ -115,6 +115,19 @@ func TestSetup_Handler(t *testing.T) {
 	assert.Contains(t, series, `service_name="svc"`)
 	assert.Contains(t, series, `host_name="host1"`)
 	assert.NotContains(t, series, "not_allowed", "only allowed resource keys become labels")
+
+	// The runtime collectors’ series get the same resource labels.
+	for _, prefix := range []string{"go_goroutines{", "process_cpu_seconds_total{"} {
+		runtimeSeries, found := lo.Find(
+			strings.Split(body, "\n"),
+			func(line string) bool { return strings.HasPrefix(line, prefix) },
+		)
+		require.True(t, found, "%s series in %s", prefix, body)
+
+		assert.Contains(t, runtimeSeries, `service_name="svc"`)
+		assert.Contains(t, runtimeSeries, `host_name="host1"`)
+		assert.NotContains(t, runtimeSeries, "not_allowed")
+	}
 }
 
 func TestSetup_RuntimeCollectors(t *testing.T) {
@@ -132,9 +145,21 @@ func TestPipeline_ShutdownIsIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
-	require.NoError(t, pipeline.Shutdown(t.Context()))
+	writes := file.writeCalls()
 
-	assert.Equal(t, 1, file.closeCount(), "Shutdown closes the metrics file once")
+	require.NoError(t, pipeline.Shutdown(t.Context()))
+	assert.Equal(t, writes, file.writeCalls(), "a second Shutdown writes nothing")
+}
+
+// The caller opened the metrics output, so the caller closes it.
+func TestPipeline_ShutdownLeavesMetricsOutOpen(t *testing.T) {
+	file := &lockedFile{}
+
+	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](file)})
+	require.NoError(t, err)
+
+	require.NoError(t, pipeline.Shutdown(t.Context()))
+	assert.Zero(t, file.closeCount())
 }
 
 func TestPipeline_ShutdownWithoutMetricsFile(t *testing.T) {
@@ -144,7 +169,7 @@ func TestPipeline_ShutdownWithoutMetricsFile(t *testing.T) {
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 }
 
-func TestPipeline_ShutdownWithNonCloserFile(t *testing.T) {
+func TestPipeline_ShutdownWritesFinalExport(t *testing.T) {
 	var buf bytes.Buffer
 
 	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](&buf)})

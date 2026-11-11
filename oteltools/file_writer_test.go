@@ -204,8 +204,6 @@ func TestMetricsFile_FinalExportOnShutdown(t *testing.T) {
 		"file_duration_milliseconds_bucket",
 		"names match the Prometheus exporter’s, with unit suffixes",
 	)
-
-	assert.Equal(t, 1, file.closeCount())
 }
 
 func findSample(samples []sample, name string) (sample, bool) {
