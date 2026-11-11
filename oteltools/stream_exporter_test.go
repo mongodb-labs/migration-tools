@@ -25,16 +25,16 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 )
 
-// lockedFile is a concurrency-safe in-memory file. The pipeline’s writer
+// lockedBuffer is a concurrency-safe in-memory writer. The pipeline’s writer
 // goroutine writes to it while the test reads it.
-type lockedFile struct {
+type lockedBuffer struct {
 	mu     sync.Mutex
 	buf    bytes.Buffer
 	writes []string
 	closes int
 }
 
-func (f *lockedFile) Write(p []byte) (int, error) {
+func (f *lockedBuffer) Write(p []byte) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -43,7 +43,7 @@ func (f *lockedFile) Write(p []byte) (int, error) {
 	return f.buf.Write(p)
 }
 
-func (f *lockedFile) Close() error {
+func (f *lockedBuffer) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -52,34 +52,34 @@ func (f *lockedFile) Close() error {
 	return nil
 }
 
-func (f *lockedFile) contents() string {
+func (f *lockedBuffer) contents() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	return f.buf.String()
 }
 
-func (f *lockedFile) writeCalls() []string {
+func (f *lockedBuffer) writeCalls() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	return slices.Clone(f.writes)
 }
 
-func (f *lockedFile) closeCount() int {
+func (f *lockedBuffer) closeCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	return f.closes
 }
 
-// parseExportLines decodes a metrics file’s lines. It requires the file to
-// end with a complete line, each line to be a JSON object with an RFC 3339
+// parseExportLines decodes exported lines. It requires the output to end
+// with a complete line, each line to be a JSON object with an RFC 3339
 // time, and each message to be a valid Prometheus text exposition.
 func parseExportLines(t *testing.T, contents string) []exportLine {
 	t.Helper()
 
-	require.True(t, strings.HasSuffix(contents, "\n"), "the file ends with a complete line")
+	require.True(t, strings.HasSuffix(contents, "\n"), "the output ends with a complete line")
 
 	var exports []exportLine
 	for line := range strings.SplitSeq(strings.TrimSuffix(contents, "\n"), "\n") {
@@ -150,13 +150,13 @@ func (failingWriter) Write([]byte) (int, error) {
 	return 0, errWrite
 }
 
-func TestMetricsFile_FinalExportOnShutdown(t *testing.T) {
-	file := &lockedFile{}
+func TestMetricsOut_FinalExportOnShutdown(t *testing.T) {
+	out := &lockedBuffer{}
 
 	pipeline, err := Setup(Settings{
 		Resource:       resource.NewSchemaless(semconv.ServiceName("svc")),
 		ResourceLabels: attribute.NewAllowKeysFilter(semconv.ServiceNameKey),
-		MetricsOut:     option.Some[io.Writer](file),
+		MetricsOut:     option.Some[io.Writer](out),
 		ExportInterval: option.Some(time.Hour),
 	})
 	require.NoError(t, err)
@@ -179,7 +179,7 @@ func TestMetricsFile_FinalExportOnShutdown(t *testing.T) {
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 	after := time.Now()
 
-	exports := parseExportLines(t, file.contents())
+	exports := parseExportLines(t, out.contents())
 	require.Len(t, exports, 1, "no periodic write within an hour, then one final write")
 
 	exportTime, err := time.Parse(time.RFC3339Nano, exports[0].Time)
@@ -215,11 +215,11 @@ func findSample(samples []sample, name string) (sample, bool) {
 	return samples[idx], true
 }
 
-func TestMetricsFile_PeriodicWrites(t *testing.T) {
-	file := &lockedFile{}
+func TestMetricsOut_PeriodicWrites(t *testing.T) {
+	out := &lockedBuffer{}
 
 	pipeline := setupForTest(t, Settings{
-		MetricsOut:     option.Some[io.Writer](file),
+		MetricsOut:     option.Some[io.Writer](out),
 		ExportInterval: option.Some(10 * time.Millisecond),
 	})
 
@@ -229,32 +229,32 @@ func TestMetricsFile_PeriodicWrites(t *testing.T) {
 
 	require.Eventually(
 		t,
-		func() bool { return strings.Count(file.contents(), "\n") >= 3 },
+		func() bool { return strings.Count(out.contents(), "\n") >= 3 },
 		5*time.Second,
 		10*time.Millisecond,
 		"several periodic writes",
 	)
 
-	for _, export := range parseExportLines(t, file.contents()) {
+	for _, export := range parseExportLines(t, out.contents()) {
 		assert.Contains(t, export.Message, "periodic_check_total")
 	}
 
 	// Each export is written in one Write call, so a rotating writer never
 	// splits an export across files.
-	for _, call := range file.writeCalls() {
+	for _, call := range out.writeCalls() {
 		assert.Len(t, parseExportLines(t, call), 1, "one whole line per write: %s", call)
 	}
 }
 
-// The file and the HTTP handler read the same registry, so they contain the
+// MetricsOut and the HTTP handler read the same registry, so they contain the
 // same series.
-func TestMetricsFile_MatchesHandler(t *testing.T) {
-	file := &lockedFile{}
+func TestMetricsOut_MatchesHandler(t *testing.T) {
+	out := &lockedBuffer{}
 
 	pipeline, err := Setup(Settings{
 		Resource:       resource.NewSchemaless(semconv.ServiceName("svc")),
 		ResourceLabels: attribute.NewAllowKeysFilter(semconv.ServiceNameKey),
-		MetricsOut:     option.Some[io.Writer](file),
+		MetricsOut:     option.Some[io.Writer](out),
 		ExportInterval: option.Some(time.Hour),
 	})
 	require.NoError(t, err)
@@ -291,7 +291,7 @@ func TestMetricsFile_MatchesHandler(t *testing.T) {
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 
-	exports := parseExportLines(t, file.contents())
+	exports := parseExportLines(t, out.contents())
 	require.Len(t, exports, 1)
 
 	assert.ElementsMatch(t, handlerSeries, seriesOf(parseSamples(t, exports[0].Message)))
@@ -306,8 +306,8 @@ func seriesOf(samples []sample) []string {
 	return series
 }
 
-func TestMetricsFile_WriteErrorsAreLogged(t *testing.T) {
-	var logs lockedFile
+func TestMetricsOut_WriteErrorsAreLogged(t *testing.T) {
+	var logs lockedBuffer
 
 	pipeline, err := Setup(Settings{
 		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
@@ -328,11 +328,11 @@ func TestMetricsFile_WriteErrorsAreLogged(t *testing.T) {
 
 // Each line has exactly the fields of mongosync’s metrics log lines that
 // readers of those files rely on.
-func TestMetricsFile_LineFields(t *testing.T) {
-	file := &lockedFile{}
+func TestMetricsOut_LineFields(t *testing.T) {
+	out := &lockedBuffer{}
 
 	pipeline, err := Setup(Settings{
-		MetricsOut:     option.Some[io.Writer](file),
+		MetricsOut:     option.Some[io.Writer](out),
 		ExportInterval: option.Some(time.Hour),
 	})
 	require.NoError(t, err)
@@ -343,8 +343,8 @@ func TestMetricsFile_LineFields(t *testing.T) {
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 
 	var fields map[string]any
-	require.NoError(t, json.Unmarshal([]byte(file.contents()), &fields))
+	require.NoError(t, json.Unmarshal([]byte(out.contents()), &fields))
 
 	assert.ElementsMatch(t, []string{"time", "message"}, slices.Collect(maps.Keys(fields)))
-	assert.Contains(t, file.contents(), `op=\"<&>\"`, "the exposition isn’t HTML-escaped")
+	assert.Contains(t, out.contents(), `op=\"<&>\"`, "the exposition isn’t HTML-escaped")
 }

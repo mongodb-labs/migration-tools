@@ -69,7 +69,7 @@ func TestSetup_LeavesGlobalStateAlone(t *testing.T) {
 	pipeline := setupForTest(t, Settings{
 		Resource:       resource.NewSchemaless(semconv.ServiceName("svc")),
 		ResourceLabels: attribute.NewAllowKeysFilter(semconv.ServiceNameKey),
-		MetricsOut:     option.Some[io.Writer](&lockedFile{}),
+		MetricsOut:     option.Some[io.Writer](&lockedBuffer{}),
 	})
 
 	counter, err := pipeline.MeterProvider().Meter("test").Int64Counter("global_state_check")
@@ -140,30 +140,30 @@ func TestSetup_RuntimeCollectors(t *testing.T) {
 }
 
 func TestPipeline_ShutdownIsIdempotent(t *testing.T) {
-	file := &lockedFile{}
+	out := &lockedBuffer{}
 
-	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](file)})
+	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](out)})
 	require.NoError(t, err)
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
-	writes := file.writeCalls()
+	writes := out.writeCalls()
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
-	assert.Equal(t, writes, file.writeCalls(), "a second Shutdown writes nothing")
+	assert.Equal(t, writes, out.writeCalls(), "a second Shutdown writes nothing")
 }
 
 // The caller opened the metrics output, so the caller closes it.
 func TestPipeline_ShutdownLeavesMetricsOutOpen(t *testing.T) {
-	file := &lockedFile{}
+	out := &lockedBuffer{}
 
-	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](file)})
+	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](out)})
 	require.NoError(t, err)
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
-	assert.Zero(t, file.closeCount())
+	assert.Zero(t, out.closeCount())
 }
 
-func TestPipeline_ShutdownWithoutMetricsFile(t *testing.T) {
+func TestPipeline_ShutdownWithoutMetricsOut(t *testing.T) {
 	pipeline, err := Setup(Settings{})
 	require.NoError(t, err)
 
@@ -229,7 +229,7 @@ func TestPipeline_ShutdownHonorsContext(t *testing.T) {
 	close(writer.release)
 
 	select {
-	case <-pipeline.file.MustGet().result.Ready():
+	case <-pipeline.stream.MustGet().result.Ready():
 	case <-time.After(10 * time.Second):
 		require.Fail(t, "writer goroutine didn’t exit")
 	}
@@ -241,7 +241,7 @@ func TestSetup_RejectsNonPositiveExportInterval(t *testing.T) {
 	for _, interval := range []time.Duration{0, -time.Second} {
 		t.Run(interval.String(), func(t *testing.T) {
 			_, err := Setup(Settings{
-				MetricsOut:     option.Some[io.Writer](&lockedFile{}),
+				MetricsOut:     option.Some[io.Writer](&lockedBuffer{}),
 				ExportInterval: option.Some(interval),
 			})
 			assert.ErrorIs(t, err, errNonPositiveExportInterval)

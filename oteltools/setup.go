@@ -1,18 +1,19 @@
 // Package oteltools sets up OpenTelemetry metrics export for migration tools.
 //
 // Setup builds a metrics pipeline that serves Prometheus metrics over HTTP
-// and, optionally, writes the same metrics to a file. Callers create
-// instruments from the pipeline’s meter provider with the OpenTelemetry API.
+// and, optionally, writes the same metrics to an io.Writer, such as a file or
+// a pipe. Callers create instruments from the pipeline’s meter provider with
+// the OpenTelemetry API.
 //
 // The OTel Prometheus exporter does all conversion from OTel to Prometheus.
-// The metrics file is written from the same registry that the HTTP handler
-// serves, so the two always contain the same series with the same names.
+// The writer gets the same registry that the HTTP handler serves, so the two
+// always contain the same series with the same names.
 //
-// # Metrics file format
+// # Export format
 //
-// The metrics file has the fields of mongosync’s metrics log files that tools
-// reading those files use, so those tools read this file too. It is JSON
-// Lines: one JSON object per export, each on its own line, such as:
+// The exported metrics have the fields of mongosync’s metrics log files that
+// tools reading those files use, so those tools read this output too. It is
+// JSON Lines: one JSON object per export, each on its own line, such as:
 //
 //	{"time":"2026-11-11T15:06:02.389Z","message":"# HELP …"}
 //
@@ -64,7 +65,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
-// DefaultExportInterval is how often metrics are written to the metrics file
+// DefaultExportInterval is how often metrics are written to Settings.MetricsOut
 // unless Settings.ExportInterval says otherwise.
 const DefaultExportInterval = 30 * time.Second
 
@@ -108,7 +109,7 @@ type Settings struct {
 type Pipeline struct {
 	provider *sdkmetric.MeterProvider
 	handler  http.Handler
-	file     option.Option[*exporter]
+	stream   option.Option[*streamExporter]
 
 	shutdownOnce sync.Once
 	shutdownErr  error
@@ -117,7 +118,7 @@ type Pipeline struct {
 // MeterProvider returns the provider that creates the meters whose
 // instruments feed the pipeline. It returns the API interface rather than the
 // SDK type so that callers shut down through Pipeline.Shutdown, which also
-// writes the last export to the metrics file.
+// writes the last export to Settings.MetricsOut.
 func (p *Pipeline) MeterProvider() otelmetric.MeterProvider {
 	return p.provider
 }
@@ -143,8 +144,8 @@ func (p *Pipeline) Shutdown(ctx context.Context) error {
 
 		// The final write gathers from the provider, so it must come before
 		// the provider shuts down.
-		if fw, has := p.file.Get(); has {
-			if err := fw.stopAndFlush(ctx); err != nil {
+		if stream, has := p.stream.Get(); has {
+			if err := stream.stopAndFlush(ctx); err != nil {
 				errs = append(errs, fmt.Errorf("writing final metrics: %w", err))
 			}
 		}
@@ -162,7 +163,7 @@ func (p *Pipeline) Shutdown(ctx context.Context) error {
 // Setup creates a meter provider whose only reader is the OTel Prometheus
 // exporter, registered on a private registry. The returned pipeline’s
 // Handler serves that registry, and if settings.MetricsOut is set, a
-// goroutine writes the same registry to the file every ExportInterval.
+// goroutine writes the same registry to it every ExportInterval.
 //
 // The registry also has the Prometheus client’s Go runtime (go_*) and
 // process (process_*) collectors, which prometheus.DefaultRegisterer would
@@ -181,8 +182,8 @@ func Setup(settings Settings) (*Pipeline, error) {
 
 	res := cmp.Or(settings.Resource, resource.Empty())
 
-	// The exporter adds resource labels only to its own series, so give the
-	// runtime collectors’ series the same labels.
+	// The OTel Prometheus exporter adds resource labels only to its own
+	// series, so give the runtime collectors’ series the same labels.
 	labels, err := resourceLabels(res, settings.ResourceLabels)
 	if err != nil {
 		return nil, err
@@ -227,7 +228,7 @@ func Setup(settings Settings) (*Pipeline, error) {
 	if writer, has := settings.MetricsOut.Get(); has {
 		interval := settings.ExportInterval.OrElse(DefaultExportInterval)
 
-		pipeline.file = option.Some(startFileWriter(registry, writer, logger, interval))
+		pipeline.stream = option.Some(startStreamExporter(registry, writer, logger, interval))
 	}
 
 	return pipeline, nil
@@ -243,8 +244,8 @@ func resourceLabels(res *resource.Resource, filter attribute.Filter) (prometheus
 		return labels, nil
 	}
 
-	// The exporter escapes label names (UTF8Allowed: false) because Setup
-	// uses its default translation strategy, which escapes.
+	// The OTel Prometheus exporter escapes label names (UTF8Allowed: false)
+	// because Setup uses its default translation strategy, which escapes.
 	namer := otlptranslator.LabelNamer{UTF8Allowed: false}
 
 	allowed, _ := res.Set().Filter(filter)

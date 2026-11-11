@@ -16,9 +16,21 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-// exporterBackend writes a gatherer’s metrics to a file, as the goroutine that
-// fileWriter controls.
-type exporterBackend struct {
+// exportLine is one line of the output: one export, as a JSON object. Its
+// fields are the ones that tools reading mongosync’s metrics log files use,
+// so those tools read this output too.
+type exportLine struct {
+	// Time is when the metrics were gathered, in RFC 3339 format. It is the
+	// same instant as every sample’s timestamp in Message.
+	Time string `json:"time"`
+
+	// Message is one Prometheus text exposition.
+	Message string `json:"message"`
+}
+
+// exportWorker is the goroutine that a streamExporter controls. It writes a
+// gatherer’s metrics to the output.
+type exportWorker struct {
 	gatherer prometheus.Gatherer
 	writer   io.Writer
 	logger   *slog.Logger
@@ -27,7 +39,7 @@ type exporterBackend struct {
 // run writes an export every interval until stopCtx is set. It then writes
 // one last export, unless the stop context has already ended, and sets the
 // result.
-func (eb *exporterBackend) run(
+func (ew *exportWorker) run(
 	interval time.Duration,
 	stopCtx *future.Future[context.Context],
 	setResult future.Setter[error],
@@ -38,8 +50,8 @@ func (eb *exporterBackend) run(
 	for {
 		select {
 		case <-timer.C:
-			if err := eb.gatherAndWriteOnce(); err != nil {
-				eb.logger.Warn("Failed to write metrics to file.", "error", err)
+			if err := ew.exportOnce(); err != nil {
+				ew.logger.Warn("Failed to write periodic metrics export.", "error", err)
 			}
 		case <-stopCtx.Ready():
 			ctx := stopCtx.Get()
@@ -49,7 +61,7 @@ func (eb *exporterBackend) run(
 			if ctx.Err() != nil {
 				setResult(contextplus.New(ctx).Err())
 			} else {
-				setResult(eb.gatherAndWriteOnce())
+				setResult(ew.exportOnce())
 			}
 
 			return
@@ -59,17 +71,17 @@ func (eb *exporterBackend) run(
 	}
 }
 
-// gatherAndWriteOnce gathers the current metrics and writes them as one export, on
+// exportOnce gathers the current metrics and writes them as one export, on
 // one line. It writes nothing if there are no metrics.
 //
 // The line is written in a single Write call, so a rotating writer never
 // splits it across files.
-func (eb *exporterBackend) gatherAndWriteOnce() error {
-	families, err := eb.gatherer.Gather()
+func (ew *exportWorker) exportOnce() error {
+	families, err := ew.gatherer.Gather()
 	if err != nil {
 		// Gather returns whatever it could collect along with the error,
 		// so write that rather than nothing.
-		eb.logger.Warn("Failed to gather some metrics for the metrics file.", "error", err)
+		ew.logger.Warn("Failed to gather some metrics for periodic export.", "error", err)
 	}
 
 	if len(families) == 0 {
@@ -77,8 +89,8 @@ func (eb *exporterBackend) gatherAndWriteOnce() error {
 	}
 
 	// Scraped metrics normally carry no timestamps because the scraper
-	// stamps them. A file is read long after the fact, so stamp every
-	// sample with the time it was gathered.
+	// stamps them. The output may be read long after the fact, so stamp
+	// every sample with the time it was gathered.
 	nowMS := time.Now().UnixMilli()
 	for _, family := range families {
 		for _, m := range family.GetMetric() {
@@ -94,8 +106,8 @@ func (eb *exporterBackend) gatherAndWriteOnce() error {
 
 	for _, family := range families {
 		if err := encoder.Encode(family); err != nil {
-			eb.logger.Warn(
-				"Failed to encode metric for the metrics file.",
+			ew.logger.Warn(
+				"Failed to encode metric for periodic export.",
 				"metric", family.GetName(),
 				"error", err,
 			)
@@ -125,7 +137,7 @@ func (eb *exporterBackend) gatherAndWriteOnce() error {
 		return fmt.Errorf("encoding metrics export as JSON: %w", err)
 	}
 
-	wrote, err := eb.writer.Write(line.Bytes())
+	wrote, err := ew.writer.Write(line.Bytes())
 
 	if err != nil {
 		return fmt.Errorf("writing metrics export: %w", err)
