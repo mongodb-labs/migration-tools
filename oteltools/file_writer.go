@@ -32,7 +32,6 @@ type fileWriter struct {
 	gatherer prometheus.Gatherer
 	writer   io.Writer
 	logger   *slog.Logger
-	now      func() time.Time
 
 	stop chan struct{}
 	done chan struct{}
@@ -48,7 +47,6 @@ func startFileWriter(
 		gatherer: gatherer,
 		writer:   writer,
 		logger:   logger,
-		now:      time.Now,
 		stop:     make(chan struct{}),
 		done:     make(chan struct{}),
 	}
@@ -104,10 +102,10 @@ func (fw *fileWriter) writeOnce() error {
 		return nil
 	}
 
-	// Scraped metrics normally carry no timestamps, because the scraper
+	// Scraped metrics normally carry no timestamps because the scraper
 	// stamps them. A file is read long after the fact, so stamp every
 	// sample with the time it was gathered.
-	nowMS := fw.now().UnixMilli()
+	nowMS := time.Now().UnixMilli()
 	for _, family := range families {
 		for _, m := range family.GetMetric() {
 			m.TimestampMs = new(nowMS)
