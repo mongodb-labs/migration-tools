@@ -68,6 +68,8 @@ import (
 // unless Settings.ExportInterval says otherwise.
 const DefaultExportInterval = 30 * time.Second
 
+var errNonPositiveExportInterval = errors.New("export interval must be positive")
+
 // Settings configures Setup.
 type Settings struct {
 	// Logger receives this package’s log messages. If nil, they are
@@ -85,15 +87,16 @@ type Settings struct {
 	// resource attributes appear only in the target_info series.
 	ResourceLabels attribute.Filter
 
-	// MetricsFile, if set, receives one export every ExportInterval, in the
+	// MetricsOut, if set, receives one export every ExportInterval, in the
 	// format that the package documentation describes. Each export is one
 	// line, written in a single Write call. The pipeline owns the writer from
 	// then on: Pipeline.Shutdown closes it if it implements io.Closer.
-	MetricsFile option.Option[io.Writer]
+	MetricsOut option.Option[io.Writer]
 
 	// ExportInterval is how often metrics are written to MetricsFile.
-	// If zero, DefaultExportInterval is used.
-	ExportInterval time.Duration
+	// If unset, DefaultExportInterval is used. Setup fails if it is set to
+	// zero or a negative duration.
+	ExportInterval option.Option[time.Duration]
 
 	// RuntimeCollectors adds the Prometheus client’s Go runtime (go_*) and
 	// process (process_*) collectors. These are what
@@ -163,6 +166,10 @@ func (p *Pipeline) Shutdown(ctx context.Context) error {
 // Exemplars are disabled because neither output uses them, and the default
 // filter costs a context lookup on every measurement.
 func Setup(settings Settings) (*Pipeline, error) {
+	if interval, has := settings.ExportInterval.Get(); has && interval <= 0 {
+		return nil, fmt.Errorf("%w: %s", errNonPositiveExportInterval, interval)
+	}
+
 	logger := loggerOrDiscard(settings.Logger)
 
 	registry := prometheus.NewRegistry()
@@ -207,14 +214,11 @@ func Setup(settings Settings) (*Pipeline, error) {
 			},
 		),
 		provider: provider,
-		writer:   settings.MetricsFile,
+		writer:   settings.MetricsOut,
 	}
 
-	if writer, has := settings.MetricsFile.Get(); has {
-		interval := settings.ExportInterval
-		if interval == 0 {
-			interval = DefaultExportInterval
-		}
+	if writer, has := settings.MetricsOut.Get(); has {
+		interval := settings.ExportInterval.OrElse(DefaultExportInterval)
 
 		pipeline.file = option.Some(startFileWriter(registry, writer, logger, interval))
 	}

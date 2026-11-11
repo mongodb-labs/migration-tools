@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mongodb-labs/migration-tools/option"
 	"github.com/prometheus/client_golang/prometheus"
@@ -67,7 +68,7 @@ func TestSetup_LeavesGlobalStateAlone(t *testing.T) {
 	pipeline := setupForTest(t, Settings{
 		Resource:          resource.NewSchemaless(semconv.ServiceName("svc")),
 		ResourceLabels:    attribute.NewAllowKeysFilter(semconv.ServiceNameKey),
-		MetricsFile:       option.Some[io.Writer](&lockedFile{}),
+		MetricsOut:        option.Some[io.Writer](&lockedFile{}),
 		RuntimeCollectors: true,
 	})
 
@@ -125,7 +126,7 @@ func TestSetup_RuntimeCollectors(t *testing.T) {
 func TestPipeline_ShutdownIsIdempotent(t *testing.T) {
 	file := &lockedFile{}
 
-	pipeline, err := Setup(Settings{MetricsFile: option.Some[io.Writer](file)})
+	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](file)})
 	require.NoError(t, err)
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
@@ -144,9 +145,21 @@ func TestPipeline_ShutdownWithoutMetricsFile(t *testing.T) {
 func TestPipeline_ShutdownWithNonCloserFile(t *testing.T) {
 	var buf bytes.Buffer
 
-	pipeline, err := Setup(Settings{MetricsFile: option.Some[io.Writer](&buf)})
+	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](&buf)})
 	require.NoError(t, err)
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 	assert.NotEmpty(t, buf.Bytes(), "Shutdown writes a final export")
+}
+
+func TestSetup_RejectsNonPositiveExportInterval(t *testing.T) {
+	for _, interval := range []time.Duration{0, -time.Second} {
+		t.Run(interval.String(), func(t *testing.T) {
+			_, err := Setup(Settings{
+				MetricsOut:     option.Some[io.Writer](&lockedFile{}),
+				ExportInterval: option.Some(interval),
+			})
+			assert.ErrorIs(t, err, errNonPositiveExportInterval)
+		})
+	}
 }

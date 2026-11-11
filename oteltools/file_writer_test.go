@@ -156,8 +156,8 @@ func TestMetricsFile_FinalExportOnShutdown(t *testing.T) {
 	pipeline, err := Setup(Settings{
 		Resource:       resource.NewSchemaless(semconv.ServiceName("svc")),
 		ResourceLabels: attribute.NewAllowKeysFilter(semconv.ServiceNameKey),
-		MetricsFile:    option.Some[io.Writer](file),
-		ExportInterval: time.Hour,
+		MetricsOut:     option.Some[io.Writer](file),
+		ExportInterval: option.Some(time.Hour),
 	})
 	require.NoError(t, err)
 
@@ -215,8 +215,8 @@ func TestMetricsFile_PeriodicWrites(t *testing.T) {
 	file := &lockedFile{}
 
 	pipeline := setupForTest(t, Settings{
-		MetricsFile:    option.Some[io.Writer](file),
-		ExportInterval: 10 * time.Millisecond,
+		MetricsOut:     option.Some[io.Writer](file),
+		ExportInterval: option.Some(10 * time.Millisecond),
 	})
 
 	counter := NewMeter(pipeline.MeterProvider.Meter("test"), nil).Int64Counter("periodic_check")
@@ -249,8 +249,8 @@ func TestMetricsFile_MatchesHandler(t *testing.T) {
 	pipeline, err := Setup(Settings{
 		Resource:       resource.NewSchemaless(semconv.ServiceName("svc")),
 		ResourceLabels: attribute.NewAllowKeysFilter(semconv.ServiceNameKey),
-		MetricsFile:    option.Some[io.Writer](file),
-		ExportInterval: time.Hour,
+		MetricsOut:     option.Some[io.Writer](file),
+		ExportInterval: option.Some(time.Hour),
 	})
 	require.NoError(t, err)
 
@@ -301,8 +301,8 @@ func TestMetricsFile_WriteErrorsAreLogged(t *testing.T) {
 
 	pipeline, err := Setup(Settings{
 		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
-		MetricsFile:    option.Some[io.Writer](failingWriter{}),
-		ExportInterval: 10 * time.Millisecond,
+		MetricsOut:     option.Some[io.Writer](failingWriter{}),
+		ExportInterval: option.Some(10 * time.Millisecond),
 	})
 	require.NoError(t, err)
 
@@ -322,8 +322,8 @@ func TestMetricsFile_LineFields(t *testing.T) {
 	file := &lockedFile{}
 
 	pipeline, err := Setup(Settings{
-		MetricsFile:    option.Some[io.Writer](file),
-		ExportInterval: time.Hour,
+		MetricsOut:     option.Some[io.Writer](file),
+		ExportInterval: option.Some(time.Hour),
 	})
 	require.NoError(t, err)
 
