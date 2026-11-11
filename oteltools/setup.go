@@ -89,9 +89,13 @@ type Settings struct {
 
 	// MetricsOut, if set, receives one export every ExportInterval, in the
 	// format that the package documentation describes. Each export is one
-	// line, written in a single Write call. The pipeline never closes the
-	// writer. It writes nothing more once Pipeline.Shutdown returns, so the
-	// caller can close the writer then.
+	// line, written in a single Write call.
+	//
+	// The pipeline never closes the writer. If Pipeline.Shutdown succeeds,
+	// the pipeline writes nothing more, so the caller can close the writer
+	// then. If Shutdown fails because its context ended, a Write may still be
+	// in progress, although no new one starts. Closing the writer may unblock
+	// that Write, if the writer supports that (as os.File pipes do).
 	MetricsOut option.Option[io.Writer]
 
 	// ExportInterval is how often metrics are written to MetricsOut.
@@ -128,6 +132,11 @@ func (p *Pipeline) Handler() http.Handler {
 // Shutdown writes the last export to MetricsOut, if set, and shuts down the
 // meter provider. Call it before the program exits. Later calls return the
 // first call’s result.
+//
+// If ctx ends before the writes to MetricsOut finish, Shutdown stops waiting
+// for them, skips the last export, and returns an error that wraps the
+// context’s error. See Settings.MetricsOut for what that means for the
+// writer.
 func (p *Pipeline) Shutdown(ctx context.Context) error {
 	p.shutdownOnce.Do(func() {
 		var errs []error
@@ -135,7 +144,7 @@ func (p *Pipeline) Shutdown(ctx context.Context) error {
 		// The final write gathers from the provider, so it must come before
 		// the provider shuts down.
 		if fw, has := p.file.Get(); has {
-			if err := fw.stopAndFlush(); err != nil {
+			if err := fw.stopAndFlush(ctx); err != nil {
 				errs = append(errs, fmt.Errorf("writing final metrics: %w", err))
 			}
 		}

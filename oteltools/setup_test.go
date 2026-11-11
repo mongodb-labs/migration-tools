@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -177,6 +178,63 @@ func TestPipeline_ShutdownWritesFinalExport(t *testing.T) {
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 	assert.NotEmpty(t, buf.Bytes(), "Shutdown writes a final export")
+}
+
+// blockingWriter blocks every Write until release is closed, as a pipe does
+// when its reader stops reading.
+type blockingWriter struct {
+	entered chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func (w *blockingWriter) Write(p []byte) (int, error) {
+	w.calls.Add(1)
+
+	select {
+	case w.entered <- struct{}{}:
+	default:
+	}
+
+	<-w.release
+
+	return len(p), nil
+}
+
+// Shutdown returns once its context ends even if MetricsOut blocks, and the
+// pipeline starts no further writes.
+func TestPipeline_ShutdownHonorsContext(t *testing.T) {
+	writer := &blockingWriter{
+		entered: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+
+	pipeline, err := Setup(Settings{
+		MetricsOut:     option.Some[io.Writer](writer),
+		ExportInterval: option.Some(time.Millisecond),
+	})
+	require.NoError(t, err)
+
+	select {
+	case <-writer.entered:
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "no periodic write started")
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+
+	require.ErrorIs(t, pipeline.Shutdown(ctx), context.DeadlineExceeded)
+
+	close(writer.release)
+
+	select {
+	case <-pipeline.file.MustGet().result.Ready():
+	case <-time.After(10 * time.Second):
+		require.Fail(t, "writer goroutine didn’t exit")
+	}
+
+	assert.EqualValues(t, 1, writer.calls.Load(), "no write starts after Shutdown gives up")
 }
 
 func TestSetup_RejectsNonPositiveExportInterval(t *testing.T) {

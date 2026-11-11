@@ -2,12 +2,15 @@ package oteltools
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"time"
 
+	"github.com/mongodb-labs/migration-tools/contextplus"
+	"github.com/mongodb-labs/migration-tools/future"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
@@ -25,16 +28,16 @@ type exportLine struct {
 	Message string `json:"message"`
 }
 
-// fileWriter periodically writes a gatherer’s metrics to a file. Because it
-// reads the same registry that the HTTP handler serves, the file always
-// matches the handler’s output.
+// fileWriter is the handle on a goroutine that periodically writes a
+// gatherer’s metrics to a file. Because the goroutine reads the same registry
+// that the HTTP handler serves, the file always matches the handler’s output.
 type fileWriter struct {
-	gatherer prometheus.Gatherer
-	writer   io.Writer
-	logger   *slog.Logger
+	// setStopCtx tells the goroutine to stop. Its context is the one that
+	// stopAndFlush received.
+	setStopCtx future.Setter[context.Context]
 
-	stop chan struct{}
-	done chan struct{}
+	// result is the final write’s error, set when the goroutine exits.
+	result *future.Future[error]
 }
 
 func startFileWriter(
@@ -43,32 +46,77 @@ func startFileWriter(
 	logger *slog.Logger,
 	interval time.Duration,
 ) *fileWriter {
-	fw := &fileWriter{
+	stopCtx, setStopCtx := future.New[context.Context]()
+	result, setResult := future.New[error]()
+
+	exporter := &fileExporter{
 		gatherer: gatherer,
 		writer:   writer,
 		logger:   logger,
-		stop:     make(chan struct{}),
-		done:     make(chan struct{}),
 	}
 
-	go fw.run(interval)
+	go exporter.run(interval, stopCtx, setResult)
 
-	return fw
+	return &fileWriter{
+		setStopCtx: setStopCtx,
+		result:     result,
+	}
 }
 
-func (fw *fileWriter) run(interval time.Duration) {
-	defer close(fw.done)
+// stopAndFlush stops the periodic writes and then writes one last export, so
+// that the file includes everything recorded up to now. Call it only once.
+//
+// A Write can’t be canceled, so if ctx ends before the writes finish,
+// stopAndFlush returns without waiting for them. A Write may then still be in
+// progress, and the goroutine skips the last export unless it has already
+// begun.
+func (fw *fileWriter) stopAndFlush(ctx context.Context) error {
+	fw.setStopCtx(ctx)
 
+	select {
+	case <-fw.result.Ready():
+		return fw.result.Get()
+	case <-ctx.Done():
+		return fmt.Errorf("awaiting last write: %w", contextplus.New(ctx).Err())
+	}
+}
+
+// fileExporter writes a gatherer’s metrics to a file, as the goroutine that
+// fileWriter controls.
+type fileExporter struct {
+	gatherer prometheus.Gatherer
+	writer   io.Writer
+	logger   *slog.Logger
+}
+
+// run writes an export every interval until stopCtx is set. It then writes
+// one last export, unless the stop context has already ended, and sets the
+// result.
+func (fe *fileExporter) run(
+	interval time.Duration,
+	stopCtx *future.Future[context.Context],
+	setResult future.Setter[error],
+) {
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
 
 	for {
 		select {
 		case <-timer.C:
-			if err := fw.writeOnce(); err != nil {
-				fw.logger.Warn("Failed to write metrics to file.", "error", err)
+			if err := fe.gatherAndWriteOnce(); err != nil {
+				fe.logger.Warn("Failed to write metrics to file.", "error", err)
 			}
-		case <-fw.stop:
+		case <-stopCtx.Ready():
+			ctx := stopCtx.Get()
+
+			// If ctx has ended, stopAndFlush has stopped waiting, so nobody
+			// expects the last export anymore.
+			if ctx.Err() != nil {
+				setResult(contextplus.New(ctx).Err())
+			} else {
+				setResult(fe.gatherAndWriteOnce())
+			}
+
 			return
 		}
 
@@ -76,26 +124,17 @@ func (fw *fileWriter) run(interval time.Duration) {
 	}
 }
 
-// stopAndFlush stops the periodic writes and then writes one last export, so
-// that the file includes everything recorded up to now.
-func (fw *fileWriter) stopAndFlush() error {
-	close(fw.stop)
-	<-fw.done
-
-	return fw.writeOnce()
-}
-
-// writeOnce gathers the current metrics and writes them as one export, on
+// gatherAndWriteOnce gathers the current metrics and writes them as one export, on
 // one line. It writes nothing if there are no metrics.
 //
 // The line is written in a single Write call, so a rotating writer never
 // splits it across files.
-func (fw *fileWriter) writeOnce() error {
-	families, err := fw.gatherer.Gather()
+func (fe *fileExporter) gatherAndWriteOnce() error {
+	families, err := fe.gatherer.Gather()
 	if err != nil {
 		// Gather returns whatever it could collect along with the error,
 		// so write that rather than nothing.
-		fw.logger.Warn("Failed to gather some metrics for the metrics file.", "error", err)
+		fe.logger.Warn("Failed to gather some metrics for the metrics file.", "error", err)
 	}
 
 	if len(families) == 0 {
@@ -120,7 +159,7 @@ func (fw *fileWriter) writeOnce() error {
 
 	for _, family := range families {
 		if err := encoder.Encode(family); err != nil {
-			fw.logger.Warn(
+			fe.logger.Warn(
 				"Failed to encode metric for the metrics file.",
 				"metric", family.GetName(),
 				"error", err,
@@ -151,7 +190,7 @@ func (fw *fileWriter) writeOnce() error {
 		return fmt.Errorf("encoding metrics export as JSON: %w", err)
 	}
 
-	wrote, err := fw.writer.Write(line.Bytes())
+	wrote, err := fe.writer.Write(line.Bytes())
 
 	if err != nil {
 		return fmt.Errorf("writing metrics export: %w", err)
