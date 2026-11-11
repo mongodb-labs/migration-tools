@@ -1,7 +1,6 @@
 package oteltools
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mongodb-labs/migration-tools/option"
+	"github.com/mongodb-labs/migration-tools/synctools"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
@@ -25,52 +25,51 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 )
 
-// lockedBuffer is a concurrency-safe in-memory writer. The pipeline’s writer
-// goroutine writes to it while the test reads it.
-type lockedBuffer struct {
+// recordingWriter is a concurrency-safe writer that records each Write call
+// and counts Close calls. Tests that need only the written bytes use
+// synctools.Buffer instead.
+type recordingWriter struct {
 	mu     sync.Mutex
-	buf    bytes.Buffer
 	writes []string
 	closes int
 }
 
-func (f *lockedBuffer) Write(p []byte) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+var _ io.WriteCloser = &recordingWriter{}
 
-	f.writes = append(f.writes, string(p))
+func (w *recordingWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	return f.buf.Write(p)
+	w.writes = append(w.writes, string(p))
+
+	return len(p), nil
 }
 
-func (f *lockedBuffer) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+func (w *recordingWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	f.closes++
+	w.closes++
 
 	return nil
 }
 
-func (f *lockedBuffer) contents() string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	return f.buf.String()
+func (w *recordingWriter) contents() string {
+	return strings.Join(w.writeCalls(), "")
 }
 
-func (f *lockedBuffer) writeCalls() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+func (w *recordingWriter) writeCalls() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	return slices.Clone(f.writes)
+	return slices.Clone(w.writes)
 }
 
-func (f *lockedBuffer) closeCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+func (w *recordingWriter) closeCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	return f.closes
+	return w.closes
 }
 
 // parseExportLines decodes exported lines. It requires the output to end
@@ -151,7 +150,7 @@ func (failingWriter) Write([]byte) (int, error) {
 }
 
 func TestMetricsOut_FinalExportOnShutdown(t *testing.T) {
-	out := &lockedBuffer{}
+	out := &synctools.Buffer{}
 
 	pipeline, err := Setup(Settings{
 		Resource:       resource.NewSchemaless(semconv.ServiceName("svc")),
@@ -179,7 +178,7 @@ func TestMetricsOut_FinalExportOnShutdown(t *testing.T) {
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 	after := time.Now()
 
-	exports := parseExportLines(t, out.contents())
+	exports := parseExportLines(t, string(out.Bytes()))
 	require.Len(t, exports, 1, "no periodic write within an hour, then one final write")
 
 	exportTime, err := time.Parse(time.RFC3339Nano, exports[0].Time)
@@ -216,7 +215,7 @@ func findSample(samples []sample, name string) (sample, bool) {
 }
 
 func TestMetricsOut_PeriodicWrites(t *testing.T) {
-	out := &lockedBuffer{}
+	out := &recordingWriter{}
 
 	pipeline := setupForTest(t, Settings{
 		MetricsOut:     option.Some[io.Writer](out),
@@ -227,16 +226,37 @@ func TestMetricsOut_PeriodicWrites(t *testing.T) {
 	require.NoError(t, err)
 	counter.Add(t.Context(), 1)
 
+	// The worker starts in Setup, before the counter exists, so the first
+	// exports may lack it.
+	const counterName = "periodic_check_total"
+
 	require.Eventually(
 		t,
-		func() bool { return strings.Count(out.contents(), "\n") >= 3 },
+		func() bool {
+			withCounter := 0
+			for line := range strings.Lines(out.contents()) {
+				if strings.Contains(line, counterName) {
+					withCounter++
+				}
+			}
+
+			return withCounter >= 2
+		},
 		5*time.Second,
 		10*time.Millisecond,
-		"several periodic writes",
+		"several periodic writes with the counter",
 	)
 
-	for _, export := range parseExportLines(t, out.contents()) {
-		assert.Contains(t, export.Message, "periodic_check_total")
+	exports := parseExportLines(t, out.contents())
+
+	first := slices.IndexFunc(exports, func(export exportLine) bool {
+		return strings.Contains(export.Message, counterName)
+	})
+	require.GreaterOrEqual(t, first, 0, "some export has the counter")
+
+	// A counter, once exported, is in every later export.
+	for _, export := range exports[first:] {
+		assert.Contains(t, export.Message, counterName)
 	}
 
 	// Each export is written in one Write call, so a rotating writer never
@@ -249,7 +269,7 @@ func TestMetricsOut_PeriodicWrites(t *testing.T) {
 // MetricsOut and the HTTP handler read the same registry, so they contain the
 // same series.
 func TestMetricsOut_MatchesHandler(t *testing.T) {
-	out := &lockedBuffer{}
+	out := &synctools.Buffer{}
 
 	pipeline, err := Setup(Settings{
 		Resource:       resource.NewSchemaless(semconv.ServiceName("svc")),
@@ -291,7 +311,7 @@ func TestMetricsOut_MatchesHandler(t *testing.T) {
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 
-	exports := parseExportLines(t, out.contents())
+	exports := parseExportLines(t, string(out.Bytes()))
 	require.Len(t, exports, 1)
 
 	assert.ElementsMatch(t, handlerSeries, seriesOf(parseSamples(t, exports[0].Message)))
@@ -307,7 +327,7 @@ func seriesOf(samples []sample) []string {
 }
 
 func TestMetricsOut_WriteErrorsAreLogged(t *testing.T) {
-	var logs lockedBuffer
+	var logs synctools.Buffer
 
 	pipeline, err := Setup(Settings{
 		Logger:         slog.New(slog.NewJSONHandler(&logs, nil)),
@@ -318,7 +338,7 @@ func TestMetricsOut_WriteErrorsAreLogged(t *testing.T) {
 
 	require.Eventually(
 		t,
-		func() bool { return strings.Contains(logs.contents(), errWrite.Error()) },
+		func() bool { return strings.Contains(string(logs.Bytes()), errWrite.Error()) },
 		5*time.Second,
 		10*time.Millisecond,
 	)
@@ -329,7 +349,7 @@ func TestMetricsOut_WriteErrorsAreLogged(t *testing.T) {
 // Each line has exactly the fields of mongosync’s metrics log lines that
 // readers of those files rely on.
 func TestMetricsOut_LineFields(t *testing.T) {
-	out := &lockedBuffer{}
+	out := &synctools.Buffer{}
 
 	pipeline, err := Setup(Settings{
 		MetricsOut:     option.Some[io.Writer](out),
@@ -343,8 +363,8 @@ func TestMetricsOut_LineFields(t *testing.T) {
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 
 	var fields map[string]any
-	require.NoError(t, json.Unmarshal([]byte(out.contents()), &fields))
+	require.NoError(t, json.Unmarshal(out.Bytes(), &fields))
 
 	assert.ElementsMatch(t, []string{"time", "message"}, slices.Collect(maps.Keys(fields)))
-	assert.Contains(t, out.contents(), `op=\"<&>\"`, "the exposition isn’t HTML-escaped")
+	assert.Contains(t, string(out.Bytes()), `op=\"<&>\"`, "the exposition isn’t HTML-escaped")
 }

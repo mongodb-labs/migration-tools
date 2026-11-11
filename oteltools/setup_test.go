@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mongodb-labs/migration-tools/option"
+	"github.com/mongodb-labs/migration-tools/synctools"
 	"github.com/prometheus/client_golang/prometheus"
 	prometheusclient "github.com/prometheus/client_model/go"
 	"github.com/samber/lo"
@@ -69,7 +70,7 @@ func TestSetup_LeavesGlobalStateAlone(t *testing.T) {
 	pipeline := setupForTest(t, Settings{
 		Resource:       resource.NewSchemaless(semconv.ServiceName("svc")),
 		ResourceLabels: attribute.NewAllowKeysFilter(semconv.ServiceNameKey),
-		MetricsOut:     option.Some[io.Writer](&lockedBuffer{}),
+		MetricsOut:     option.Some[io.Writer](&synctools.Buffer{}),
 	})
 
 	counter, err := pipeline.MeterProvider().Meter("test").Int64Counter("global_state_check")
@@ -140,7 +141,7 @@ func TestSetup_RuntimeCollectors(t *testing.T) {
 }
 
 func TestPipeline_ShutdownIsIdempotent(t *testing.T) {
-	out := &lockedBuffer{}
+	out := &recordingWriter{}
 
 	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](out)})
 	require.NoError(t, err)
@@ -154,7 +155,7 @@ func TestPipeline_ShutdownIsIdempotent(t *testing.T) {
 
 // The caller opened the metrics output, so the caller closes it.
 func TestPipeline_ShutdownLeavesMetricsOutOpen(t *testing.T) {
-	out := &lockedBuffer{}
+	out := &recordingWriter{}
 
 	pipeline, err := Setup(Settings{MetricsOut: option.Some[io.Writer](out)})
 	require.NoError(t, err)
@@ -241,7 +242,7 @@ func TestSetup_RejectsNonPositiveExportInterval(t *testing.T) {
 	for _, interval := range []time.Duration{0, -time.Second} {
 		t.Run(interval.String(), func(t *testing.T) {
 			_, err := Setup(Settings{
-				MetricsOut:     option.Some[io.Writer](&lockedBuffer{}),
+				MetricsOut:     option.Some[io.Writer](&synctools.Buffer{}),
 				ExportInterval: option.Some(interval),
 			})
 			assert.ErrorIs(t, err, errNonPositiveExportInterval)
