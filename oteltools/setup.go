@@ -108,7 +108,7 @@ type Settings struct {
 type Pipeline struct {
 	provider *sdkmetric.MeterProvider
 	handler  http.Handler
-	file     option.Option[*fileWriter]
+	file     option.Option[*exporter]
 
 	shutdownOnce sync.Once
 	shutdownErr  error
