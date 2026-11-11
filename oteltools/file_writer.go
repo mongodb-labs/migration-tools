@@ -61,18 +61,20 @@ func startFileWriter(
 func (fw *fileWriter) run(interval time.Duration) {
 	defer close(fw.done)
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
+		case <-timer.C:
 			if err := fw.writeOnce(); err != nil {
 				fw.logger.Warn("Failed to write metrics to file.", "error", err)
 			}
 		case <-fw.stop:
 			return
 		}
+
+		timer.Reset(interval)
 	}
 }
 
@@ -132,7 +134,11 @@ func (fw *fileWriter) writeOnce() error {
 		return nil
 	}
 
+	// As of this writing json.Encoder always writes a single line per Encode
+	// call. That’s undocumented behavior, though. To avoid reliance on that we
+	// use our own buffer.
 	var line bytes.Buffer
+
 	lineEncoder := json.NewEncoder(&line)
 
 	// Keep the exposition readable: there is no HTML here to protect.

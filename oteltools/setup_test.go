@@ -66,15 +66,15 @@ func TestSetup_LeavesGlobalStateAlone(t *testing.T) {
 	gathererNamesBefore := defaultGathererNames(t)
 
 	pipeline := setupForTest(t, Settings{
-		Resource:          resource.NewSchemaless(semconv.ServiceName("svc")),
-		ResourceLabels:    attribute.NewAllowKeysFilter(semconv.ServiceNameKey),
-		MetricsOut:        option.Some[io.Writer](&lockedFile{}),
-		RuntimeCollectors: true,
+		Resource:       resource.NewSchemaless(semconv.ServiceName("svc")),
+		ResourceLabels: attribute.NewAllowKeysFilter(semconv.ServiceNameKey),
+		MetricsOut:     option.Some[io.Writer](&lockedFile{}),
 	})
 
-	meter := NewMeter(pipeline.MeterProvider.Meter("test"), nil)
-	meter.Int64Counter("global_state_check").Add(t.Context(), 1)
-	_ = scrape(t, pipeline.Handler)
+	counter, err := pipeline.MeterProvider().Meter("test").Int64Counter("global_state_check")
+	require.NoError(t, err)
+	counter.Add(t.Context(), 1)
+	_ = scrape(t, pipeline.Handler())
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 
 	assert.Equal(t, globalProvider, otel.GetMeterProvider(), "global meter provider")
@@ -99,10 +99,11 @@ func TestSetup_Handler(t *testing.T) {
 		),
 	})
 
-	counter := NewMeter(pipeline.MeterProvider.Meter("test"), nil).Int64Counter("handler_check")
+	counter, err := pipeline.MeterProvider().Meter("test").Int64Counter("handler_check")
+	require.NoError(t, err)
 	counter.Add(t.Context(), 7, otelmetric.WithAttributes(attribute.String("cluster", "src")))
 
-	body := scrape(t, pipeline.Handler)
+	body := scrape(t, pipeline.Handler())
 
 	series, found := lo.Find(
 		strings.Split(body, "\n"),
@@ -114,13 +115,14 @@ func TestSetup_Handler(t *testing.T) {
 	assert.Contains(t, series, `service_name="svc"`)
 	assert.Contains(t, series, `host_name="host1"`)
 	assert.NotContains(t, series, "not_allowed", "only allowed resource keys become labels")
-	assert.NotContains(t, body, "go_goroutines", "runtime collectors are off by default")
 }
 
 func TestSetup_RuntimeCollectors(t *testing.T) {
-	pipeline := setupForTest(t, Settings{RuntimeCollectors: true})
+	pipeline := setupForTest(t, Settings{})
 
-	assert.Contains(t, scrape(t, pipeline.Handler), "go_goroutines")
+	body := scrape(t, pipeline.Handler())
+	assert.Contains(t, body, "go_goroutines")
+	assert.Contains(t, body, "process_cpu_seconds_total")
 }
 
 func TestPipeline_ShutdownIsIdempotent(t *testing.T) {

@@ -1,10 +1,8 @@
 // Package oteltools sets up OpenTelemetry metrics export for migration tools.
 //
-// It provides:
-//   - Setup, which builds a metrics pipeline that serves Prometheus metrics
-//     over HTTP and, optionally, writes the same metrics to a file;
-//   - Meter, which wraps an otelmetric.Meter so that instrument-creation
-//     failures are logged instead of returned.
+// Setup builds a metrics pipeline that serves Prometheus metrics over HTTP
+// and, optionally, writes the same metrics to a file. Callers create
+// instruments from the pipeline’s meter provider with the OpenTelemetry API.
 //
 // The OTel Prometheus exporter does all conversion from OTel to Prometheus.
 // The metrics file is written from the same registry that the HTTP handler
@@ -43,6 +41,7 @@
 package oteltools
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -97,32 +96,32 @@ type Settings struct {
 	// If unset, DefaultExportInterval is used. Setup fails if it is set to
 	// zero or a negative duration.
 	ExportInterval option.Option[time.Duration]
-
-	// RuntimeCollectors adds the Prometheus client’s Go runtime (go_*) and
-	// process (process_*) collectors. These are what
-	// prometheus.DefaultRegisterer would otherwise provide.
-	RuntimeCollectors bool
 }
 
 // Pipeline is a running metrics pipeline.
 type Pipeline struct {
-	// MeterProvider creates the meters whose instruments feed the pipeline.
-	// It is the API interface rather than the SDK type so that callers shut
-	// down through Pipeline.Shutdown, which also writes the last export to the
-	// metrics file.
-	MeterProvider otelmetric.MeterProvider
-
-	// Handler serves the metrics in Prometheus text format, typically at
-	// /metrics. It reads only a registry that Setup created, never the
-	// Prometheus default registry.
-	Handler http.Handler
-
 	provider *sdkmetric.MeterProvider
+	handler  http.Handler
 	file     option.Option[*fileWriter]
 	writer   option.Option[io.Writer]
 
 	shutdownOnce sync.Once
 	shutdownErr  error
+}
+
+// MeterProvider returns the provider that creates the meters whose
+// instruments feed the pipeline. It returns the API interface rather than the
+// SDK type so that callers shut down through Pipeline.Shutdown, which also
+// writes the last export to the metrics file.
+func (p *Pipeline) MeterProvider() otelmetric.MeterProvider {
+	return p.provider
+}
+
+// Handler returns an HTTP handler that serves the metrics in Prometheus text
+// format, typically at /metrics. It reads only a registry that Setup
+// created, never the Prometheus default registry.
+func (p *Pipeline) Handler() http.Handler {
+	return p.handler
 }
 
 // Shutdown writes the last export to the metrics file, shuts down the meter
@@ -160,8 +159,12 @@ func (p *Pipeline) Shutdown(ctx context.Context) error {
 
 // Setup creates a meter provider whose only reader is the OTel Prometheus
 // exporter, registered on a private registry. The returned pipeline’s
-// Handler serves that registry, and if settings.MetricsFile is set, a
+// Handler serves that registry, and if settings.MetricsOut is set, a
 // goroutine writes the same registry to the file every ExportInterval.
+//
+// The registry also has the Prometheus client’s Go runtime (go_*) and
+// process (process_*) collectors, which prometheus.DefaultRegisterer would
+// otherwise provide.
 //
 // Exemplars are disabled because neither output uses them, and the default
 // filter costs a context lookup on every measurement.
@@ -170,14 +173,12 @@ func Setup(settings Settings) (*Pipeline, error) {
 		return nil, fmt.Errorf("%w: %s", errNonPositiveExportInterval, interval)
 	}
 
-	logger := loggerOrDiscard(settings.Logger)
+	logger := cmp.Or(settings.Logger, slog.New(slog.DiscardHandler))
 
 	registry := prometheus.NewRegistry()
 
-	if settings.RuntimeCollectors {
-		if err := registerRuntimeCollectors(registry); err != nil {
-			return nil, err
-		}
+	if err := registerRuntimeCollectors(registry); err != nil {
+		return nil, err
 	}
 
 	promOpts := []otelprometheus.Option{otelprometheus.WithRegisterer(registry)}
@@ -193,10 +194,7 @@ func Setup(settings Settings) (*Pipeline, error) {
 		return nil, fmt.Errorf("creating Prometheus exporter: %w", err)
 	}
 
-	res := settings.Resource
-	if res == nil {
-		res = resource.Empty()
-	}
+	res := cmp.Or(settings.Resource, resource.Empty())
 
 	provider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
@@ -205,16 +203,15 @@ func Setup(settings Settings) (*Pipeline, error) {
 	)
 
 	pipeline := &Pipeline{
-		MeterProvider: provider,
-		Handler: promhttp.HandlerFor(
+		provider: provider,
+		handler: promhttp.HandlerFor(
 			registry,
 			promhttp.HandlerOpts{
 				ErrorLog:      slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 				ErrorHandling: promhttp.ContinueOnError,
 			},
 		),
-		provider: provider,
-		writer:   settings.MetricsOut,
+		writer: settings.MetricsOut,
 	}
 
 	if writer, has := settings.MetricsOut.Get(); has {
@@ -237,12 +234,4 @@ func registerRuntimeCollectors(registry *prometheus.Registry) error {
 	}
 
 	return nil
-}
-
-func loggerOrDiscard(logger *slog.Logger) *slog.Logger {
-	if logger == nil {
-		return slog.New(slog.DiscardHandler)
-	}
-
-	return logger
 }

@@ -161,13 +161,19 @@ func TestMetricsFile_FinalExportOnShutdown(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	meter := NewMeter(pipeline.MeterProvider.Meter("test"), nil)
-	meter.Int64Counter("file_check").Add(t.Context(), 3)
-	meter.Int64Histogram(
+	meter := pipeline.MeterProvider().Meter("test")
+
+	checkCounter, err := meter.Int64Counter("file_check")
+	require.NoError(t, err)
+	checkCounter.Add(t.Context(), 3)
+
+	histogram, err := meter.Int64Histogram(
 		"file_duration",
 		otelmetric.WithUnit("ms"),
 		otelmetric.WithExplicitBucketBoundaries(10),
-	).Record(t.Context(), 5)
+	)
+	require.NoError(t, err)
+	histogram.Record(t.Context(), 5)
 
 	before := time.Now()
 	require.NoError(t, pipeline.Shutdown(t.Context()))
@@ -219,7 +225,8 @@ func TestMetricsFile_PeriodicWrites(t *testing.T) {
 		ExportInterval: option.Some(10 * time.Millisecond),
 	})
 
-	counter := NewMeter(pipeline.MeterProvider.Meter("test"), nil).Int64Counter("periodic_check")
+	counter, err := pipeline.MeterProvider().Meter("test").Int64Counter("periodic_check")
+	require.NoError(t, err)
 	counter.Add(t.Context(), 1)
 
 	require.Eventually(
@@ -254,22 +261,27 @@ func TestMetricsFile_MatchesHandler(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	meter := NewMeter(pipeline.MeterProvider.Meter("test"), nil)
-	meter.Int64Counter("match_count").Add(
-		t.Context(),
-		2,
-		otelmetric.WithAttributes(attribute.String("cluster", "dst")),
-	)
-	meter.Float64Gauge("match_gauge", otelmetric.WithUnit("s")).Record(t.Context(), 1.5)
-	meter.Int64Histogram(
+	meter := pipeline.MeterProvider().Meter("test")
+
+	counter, err := meter.Int64Counter("match_count")
+	require.NoError(t, err)
+	counter.Add(t.Context(), 2, otelmetric.WithAttributes(attribute.String("cluster", "dst")))
+
+	gauge, err := meter.Float64Gauge("match_gauge", otelmetric.WithUnit("s"))
+	require.NoError(t, err)
+	gauge.Record(t.Context(), 1.5)
+
+	histogram, err := meter.Int64Histogram(
 		"match_hist",
 		otelmetric.WithUnit("ms"),
 		otelmetric.WithExplicitBucketBoundaries(1, 10),
-	).Record(t.Context(), 4)
+	)
+	require.NoError(t, err)
+	histogram.Record(t.Context(), 4)
 
 	// Scrape output has no timestamps, so add a placeholder to reuse
 	// parseSamples.
-	scraped := scrape(t, pipeline.Handler)
+	scraped := scrape(t, pipeline.Handler())
 	var stamped strings.Builder
 	for line := range strings.SplitSeq(scraped, "\n") {
 		if line != "" && !strings.HasPrefix(line, "#") {
@@ -327,9 +339,9 @@ func TestMetricsFile_LineFields(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	NewMeter(pipeline.MeterProvider.Meter("test"), nil).
-		Int64Counter("fields_check").
-		Add(t.Context(), 1, otelmetric.WithAttributes(attribute.String("op", "<&>")))
+	counter, err := pipeline.MeterProvider().Meter("test").Int64Counter("fields_check")
+	require.NoError(t, err)
+	counter.Add(t.Context(), 1, otelmetric.WithAttributes(attribute.String("op", "<&>")))
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 
 	var fields map[string]any
