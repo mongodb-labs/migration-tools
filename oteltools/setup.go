@@ -9,6 +9,45 @@
 // The writer gets the same registry that the HTTP handler serves, so the two
 // always contain the same series with the same names.
 //
+// # Synopsis
+//
+// An application that counts compared documents, serves the count at
+// /metrics, and also writes it to a file:
+//
+//		pipeline, err := oteltools.Setup(oteltools.Settings{
+//			MetricsOut: option.Some[io.Writer](metricsFile),
+//		})
+//		if err != nil {
+//			return fmt.Errorf("setup otel: %w", err)
+//		}
+//
+//		http.Handle("/metrics", pipeline.Handler())
+//
+//
+//		meter := pipeline.MeterProvider().Meter("my-tool")
+//
+//		comparedDocs, err := meter.Int64Counter("compared_docs")
+//		if err != nil {
+//			return fmt.Errorf("setup compared_docs: %w", err)
+//		}
+//
+//		comparedDocs.Add(ctx, 1)
+//
+//		// … and before exiting, which writes a last export:
+//		if err := pipeline.Shutdown(ctx); err != nil {
+//	     // Do *not* close the file if the shutdown failed.
+//
+//			slog.Warn("shutdown otel", "err", err)
+//		} else {
+//			// Successful shutdown
+//
+//			_ = metricsFile.Close()
+//		}
+//
+// Both outputs then contain a counter named compared_docs_total. They also
+// contain the Go runtime (go_*) and process (process_*) metrics that Setup
+// always adds.
+//
 // # Export format
 //
 // The output is a sequence of exports. Each export is one Prometheus text
