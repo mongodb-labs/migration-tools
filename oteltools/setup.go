@@ -135,8 +135,9 @@ func (p *Pipeline) Handler() http.Handler {
 // first call’s result.
 //
 // If ctx ends before the writes to MetricsOut finish, Shutdown stops waiting
-// for them, skips the last export, and returns an error that wraps the
-// context’s error. See Settings.MetricsOut for what that means for the
+// for them and returns an error that wraps the context’s error. The last
+// export is then skipped if it hasn’t started; if it has, it may finish after
+// Shutdown returns. See Settings.MetricsOut for what that means for the
 // writer.
 func (p *Pipeline) Shutdown(ctx context.Context) error {
 	p.shutdownOnce.Do(func() {

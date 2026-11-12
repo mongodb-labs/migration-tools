@@ -67,8 +67,14 @@ func (se *streamExporter) stopAndFlush(ctx context.Context) error {
 
 	select {
 	case <-se.result.Ready():
-		return se.result.Get()
 	case <-ctx.Done():
+	}
+
+	// If the final write and context are both done, favor write.
+	select {
+	case <-se.result.Ready():
+		return se.result.Get()
+	default:
 		se.gaveUp.Store(true)
 
 		return fmt.Errorf("awaiting last write: %w", contextplus.New(ctx).Err())
