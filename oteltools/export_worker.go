@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/mongodb-labs/migration-tools/future"
+	"github.com/mongodb-labs/migration-tools/option"
 	"github.com/prometheus/client_golang/prometheus"
-	io_prometheus_client "github.com/prometheus/client_model/go"
+	prometheusclient "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 )
@@ -29,11 +30,19 @@ type exportWorker struct {
 
 	// gaveUp is set when stopAndFlush stops waiting for the last export.
 	gaveUp *atomic.Bool
+
+	// writeErr is set when a Write fails. The output may then end partway
+	// through a line, so anything written after it could make that line
+	// wrong rather than merely incomplete.
+	writeErr option.Option[error]
 }
 
 // run writes an export every interval until stop is closed. It then writes one
 // last export, unless stopAndFlush has given up waiting for it, and sets the
 // result.
+//
+// After a Write fails, run writes nothing more, and the result is that
+// Write’s error.
 func (ew *exportWorker) run(
 	interval time.Duration,
 	stop <-chan struct{},
@@ -63,6 +72,13 @@ func (ew *exportWorker) run(
 
 		if err := ew.exportOnce(); err != nil {
 			ew.logger.Warn("Failed to write periodic metrics export.", "error", err)
+		}
+
+		if err, failed := ew.writeErr.Get(); failed {
+			<-stop
+			setResult(err)
+
+			return
 		}
 
 		timer.Reset(interval)
@@ -98,12 +114,15 @@ func (ew *exportWorker) exportOnce() error {
 
 	wrote, err := ew.writer.Write(export)
 
-	if err != nil {
-		return fmt.Errorf("writing metrics export: %w", err)
+	if err == nil && wrote != len(export) {
+		err = fmt.Errorf("%w: only %d of %d bytes", io.ErrShortWrite, wrote, len(export))
 	}
 
-	if wrote != len(export) {
-		return fmt.Errorf("incomplete write: only %d of %d bytes", wrote, len(export))
+	if err != nil {
+		err = fmt.Errorf("writing metrics export, so writing no more: %w", err)
+		ew.writeErr = option.Some(err)
+
+		return err
 	}
 
 	return nil
@@ -111,7 +130,7 @@ func (ew *exportWorker) exportOnce() error {
 
 // encodeExport returns the gathered metrics as one Prometheus exposition
 // with an EndOfExport line. It returns nothing if there are no metrics.
-func (ew *exportWorker) encodeExport(families []*io_prometheus_client.MetricFamily) []byte {
+func (ew *exportWorker) encodeExport(families []*prometheusclient.MetricFamily) []byte {
 	if len(families) == 0 {
 		return nil
 	}

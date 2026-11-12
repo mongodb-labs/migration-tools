@@ -349,7 +349,67 @@ func TestMetricsOut_WriteErrorsAreLogged(t *testing.T) {
 		10*time.Millisecond,
 	)
 
-	assert.ErrorIs(t, pipeline.Shutdown(t.Context()), errWrite, "the final write fails too")
+	assert.ErrorIs(t, pipeline.Shutdown(t.Context()), errWrite, "Shutdown reports the failed write")
+}
+
+// partialOnceWriter writes half of its first Write and fails, then accepts
+// every later Write in full.
+type partialOnceWriter struct {
+	mu      sync.Mutex
+	written []byte
+	calls   int
+
+	// failed is closed once the first Write has returned.
+	failed chan struct{}
+}
+
+var _ io.Writer = &partialOnceWriter{}
+
+func (w *partialOnceWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.calls++
+	if w.calls > 1 {
+		w.written = append(w.written, p...)
+
+		return len(p), nil
+	}
+
+	defer close(w.failed)
+
+	half := len(p) / 2
+	w.written = append(w.written, p[:half]...)
+
+	return half, errWrite
+}
+
+func (w *partialOnceWriter) state() (string, int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return string(w.written), w.calls
+}
+
+// After a Write fails, nothing more is written, and Shutdown reports the
+// failure. This matters most when the Write wrote part of an export, which
+// leaves the output partway through a line.
+func TestMetricsOut_FailedWriteStopsOutput(t *testing.T) {
+	out := &partialOnceWriter{failed: make(chan struct{})}
+
+	pipeline, err := Setup(Settings{
+		MetricsOut:     option.Some[io.Writer](out),
+		ExportInterval: option.Some(time.Millisecond),
+	})
+	require.NoError(t, err)
+
+	<-out.failed
+
+	assert.ErrorIs(t, pipeline.Shutdown(t.Context()), errWrite)
+
+	written, calls := out.state()
+	assert.Equal(t, 1, calls, "no Write after the partial one")
+	assert.NotContains(t, written, EndOfExport, "the output is only the partial export")
 }
 
 // If stopAndFlush gives up while the last export is still gathering, that
