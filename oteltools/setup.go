@@ -11,27 +11,27 @@
 //
 // # Export format
 //
-// The exported metrics have the fields of mongosync’s metrics log files that
-// tools reading those files use, so those tools read this output too. It is
-// JSON Lines: one JSON object per export, each on its own line, such as:
+// The output is a sequence of exports. Each export is one Prometheus text
+// exposition, the same series that the HTTP handler serves, except that every
+// sample has a timestamp: the time the export was gathered, in Unix
+// milliseconds. An EndOfExport line (“# EOF”) follows each export, such as:
 //
-//	{"time":"2026-11-11T15:06:02.389Z","message":"# HELP …"}
+//	# HELP go_goroutines Number of goroutines that currently exist.
+//	# TYPE go_goroutines gauge
+//	go_goroutines{service_name="svc"} 12 1762873562389
+//	…
+//	# EOF
 //
-// The fields are:
-//   - time: when the export was gathered, in RFC 3339 format;
-//   - message: one Prometheus text exposition, the same content that the
-//     HTTP handler serves, except that every sample has a timestamp. The
-//     timestamp is the export’s time, in Unix milliseconds.
+// Prometheus text parsers read the EndOfExport lines as comments. Each export
+// can go to a Prometheus text parser on its own. The whole output can go
+// straight to an importer that reads Prometheus text line by line, such as
+// VictoriaMetrics’ /api/v1/import/prometheus endpoint. (A strict parser
+// rejects the whole output, because each export repeats the HELP and TYPE
+// lines.) Because every sample has a timestamp, an importer stores each
+// sample at the time it was gathered, not the time it was imported.
 //
-// To read the metrics, decode each line and take its message. Each message
-// is a complete exposition, so it can go straight to a Prometheus text
-// parser or to an importer such as VictoriaMetrics’
-// /api/v1/import/prometheus endpoint. Because every sample has a timestamp,
-// an importer stores each sample at the time it was gathered, not the time
-// it was imported.
-//
-// A final line that isn’t a complete JSON object is an export that was cut
-// short, for example by a crash, and should be discarded.
+// Output after the last EndOfExport line is an export that was cut short, for
+// example by a crash. Its final line may be incomplete.
 //
 // Nothing in this package alters global state. In particular, it never calls
 // otel.SetMeterProvider or any other otel.Set* function, and it never
@@ -89,8 +89,8 @@ type Settings struct {
 	ResourceLabels attribute.Filter
 
 	// MetricsOut, if set, receives one export every ExportInterval, in the
-	// format that the package documentation describes. Each export is one
-	// line, written in a single Write call.
+	// format that the package documentation describes. Each export, with
+	// its EndOfExport line, is written in a single Write call.
 	//
 	// The pipeline never closes the writer. If Pipeline.Shutdown succeeds,
 	// the pipeline writes nothing more, so the caller can close the writer

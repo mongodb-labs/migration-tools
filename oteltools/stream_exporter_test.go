@@ -1,11 +1,9 @@
 package oteltools
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -72,27 +70,32 @@ func (w *recordingWriter) closeCount() int {
 	return w.closes
 }
 
-// parseExportLines decodes exported lines. It requires the output to end
-// with a complete line, each line to be a JSON object with an RFC 3339
-// time, and each message to be a valid Prometheus text exposition.
-func parseExportLines(t *testing.T, contents string) []exportLine {
+// parseExports splits the output into exports. It requires the output to end
+// with a complete export and each export to be a valid Prometheus text
+// exposition. The returned exports omit their EndOfExport lines.
+func parseExports(t *testing.T, contents string) []string {
 	t.Helper()
 
-	require.True(t, strings.HasSuffix(contents, "\n"), "the output ends with a complete line")
+	require.True(
+		t,
+		strings.HasSuffix(contents, "\n"+EndOfExport+"\n"),
+		"the output ends with a complete export",
+	)
 
-	var exports []exportLine
-	for line := range strings.SplitSeq(strings.TrimSuffix(contents, "\n"), "\n") {
-		var export exportLine
-		require.NoError(t, json.Unmarshal([]byte(line), &export), "line is JSON: %s", line)
-
-		_, err := time.Parse(time.RFC3339Nano, export.Time)
-		require.NoError(t, err, "time is RFC 3339: %s", line)
+	var exports []string
+	var current strings.Builder
+	for line := range strings.Lines(contents) {
+		if line != EndOfExport+"\n" {
+			current.WriteString(line)
+			continue
+		}
 
 		parser := expfmt.NewTextParser(model.UTF8Validation)
-		_, err = parser.TextToMetricFamilies(strings.NewReader(export.Message))
-		require.NoError(t, err, "message is a valid exposition: %s", export.Message)
+		_, err := parser.TextToMetricFamilies(strings.NewReader(current.String()))
+		require.NoError(t, err, "export is a valid exposition: %s", current.String())
 
-		exports = append(exports, export)
+		exports = append(exports, current.String())
+		current.Reset()
 	}
 
 	return exports
@@ -178,23 +181,23 @@ func TestMetricsOut_FinalExportOnShutdown(t *testing.T) {
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 	after := time.Now()
 
-	exports := parseExportLines(t, string(out.Bytes()))
+	exports := parseExports(t, string(out.Bytes()))
 	require.Len(t, exports, 1, "no periodic write within an hour, then one final write")
 
-	exportTime, err := time.Parse(time.RFC3339Nano, exports[0].Time)
-	require.NoError(t, err)
-	assert.GreaterOrEqual(t, exportTime.UnixMilli(), before.UnixMilli())
-	assert.LessOrEqual(t, exportTime.UnixMilli(), after.UnixMilli())
-
-	samples := parseSamples(t, exports[0].Message)
+	samples := parseSamples(t, exports[0])
 	require.NotEmpty(t, samples)
 
+	// Every sample has the time the export was gathered.
+	exportTimeMS := samples[0].timestampMS
+	assert.GreaterOrEqual(t, exportTimeMS, before.UnixMilli())
+	assert.LessOrEqual(t, exportTimeMS, after.UnixMilli())
+
 	for _, s := range samples {
-		assert.Equal(t, exportTime.UnixMilli(), s.timestampMS, "sample: %s", s.series)
+		assert.Equal(t, exportTimeMS, s.timestampMS, "sample: %s", s.series)
 	}
 
 	counter, found := findSample(samples, "file_check_total")
-	require.True(t, found, "counter in %s", exports[0].Message)
+	require.True(t, found, "counter in %s", exports[0])
 	assert.Contains(t, counter.series, `service_name="svc"`)
 
 	assert.Contains(
@@ -235,7 +238,7 @@ func TestMetricsOut_PeriodicWrites(t *testing.T) {
 		func() bool {
 			withCounter := 0
 			for line := range strings.Lines(out.contents()) {
-				if strings.Contains(line, counterName) {
+				if strings.HasPrefix(line, counterName) {
 					withCounter++
 				}
 			}
@@ -247,22 +250,22 @@ func TestMetricsOut_PeriodicWrites(t *testing.T) {
 		"several periodic writes with the counter",
 	)
 
-	exports := parseExportLines(t, out.contents())
+	exports := parseExports(t, out.contents())
 
-	first := slices.IndexFunc(exports, func(export exportLine) bool {
-		return strings.Contains(export.Message, counterName)
+	first := slices.IndexFunc(exports, func(export string) bool {
+		return strings.Contains(export, counterName)
 	})
 	require.GreaterOrEqual(t, first, 0, "some export has the counter")
 
 	// A counter, once exported, is in every later export.
 	for _, export := range exports[first:] {
-		assert.Contains(t, export.Message, counterName)
+		assert.Contains(t, export, counterName)
 	}
 
 	// Each export is written in one Write call, so a rotating writer never
 	// splits an export across files.
 	for _, call := range out.writeCalls() {
-		assert.Len(t, parseExportLines(t, call), 1, "one whole line per write: %s", call)
+		assert.Len(t, parseExports(t, call), 1, "one whole export per write: %s", call)
 	}
 }
 
@@ -311,10 +314,10 @@ func TestMetricsOut_MatchesHandler(t *testing.T) {
 
 	require.NoError(t, pipeline.Shutdown(t.Context()))
 
-	exports := parseExportLines(t, string(out.Bytes()))
+	exports := parseExports(t, string(out.Bytes()))
 	require.Len(t, exports, 1)
 
-	assert.ElementsMatch(t, handlerSeries, seriesOf(parseSamples(t, exports[0].Message)))
+	assert.ElementsMatch(t, handlerSeries, seriesOf(parseSamples(t, exports[0])))
 }
 
 func seriesOf(samples []sample) []string {
@@ -344,27 +347,4 @@ func TestMetricsOut_WriteErrorsAreLogged(t *testing.T) {
 	)
 
 	assert.ErrorIs(t, pipeline.Shutdown(t.Context()), errWrite, "the final write fails too")
-}
-
-// Each line has exactly the fields of mongosync’s metrics log lines that
-// readers of those files rely on.
-func TestMetricsOut_LineFields(t *testing.T) {
-	out := &synctools.Buffer{}
-
-	pipeline, err := Setup(Settings{
-		MetricsOut:     option.Some[io.Writer](out),
-		ExportInterval: option.Some(time.Hour),
-	})
-	require.NoError(t, err)
-
-	counter, err := pipeline.MeterProvider().Meter("test").Int64Counter("fields_check")
-	require.NoError(t, err)
-	counter.Add(t.Context(), 1, otelmetric.WithAttributes(attribute.String("op", "<&>")))
-	require.NoError(t, pipeline.Shutdown(t.Context()))
-
-	var fields map[string]any
-	require.NoError(t, json.Unmarshal(out.Bytes(), &fields))
-
-	assert.ElementsMatch(t, []string{"time", "message"}, slices.Collect(maps.Keys(fields)))
-	assert.Contains(t, string(out.Bytes()), `op=\"<&>\"`, "the exposition isn’t HTML-escaped")
 }

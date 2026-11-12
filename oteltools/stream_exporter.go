@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/mongodb-labs/migration-tools/contextplus"
@@ -17,12 +18,15 @@ import (
 // same registry that the HTTP handler serves, the output always matches the
 // handler’s.
 type streamExporter struct {
-	// setStopCtx tells the goroutine to stop. Its context is the one that
-	// stopAndFlush received.
-	setStopCtx future.Setter[context.Context]
+	// stop tells the goroutine to stop when closed.
+	stop chan struct{}
 
 	// result is the final write’s error, set when the goroutine exits.
 	result *future.Future[error]
+
+	// gaveUp tells the goroutine that stopAndFlush has stopped waiting for
+	// it, so it must not start the last export.
+	gaveUp *atomic.Bool
 }
 
 func startStreamExporter(
@@ -31,20 +35,23 @@ func startStreamExporter(
 	logger *slog.Logger,
 	interval time.Duration,
 ) *streamExporter {
-	stopCtx, setStopCtx := future.New[context.Context]()
+	stop := make(chan struct{})
 	result, setResult := future.New[error]()
+	gaveUp := &atomic.Bool{}
 
 	worker := &exportWorker{
 		gatherer: gatherer,
 		writer:   writer,
 		logger:   logger,
+		gaveUp:   gaveUp,
 	}
 
-	go worker.run(interval, stopCtx, setResult)
+	go worker.run(interval, stop, setResult)
 
 	return &streamExporter{
-		setStopCtx: setStopCtx,
-		result:     result,
+		stop:   stop,
+		result: result,
+		gaveUp: gaveUp,
 	}
 }
 
@@ -56,12 +63,14 @@ func startStreamExporter(
 // progress, and the goroutine skips the last export unless it has already
 // begun.
 func (se *streamExporter) stopAndFlush(ctx context.Context) error {
-	se.setStopCtx(ctx)
+	close(se.stop)
 
 	select {
 	case <-se.result.Ready():
 		return se.result.Get()
 	case <-ctx.Done():
+		se.gaveUp.Store(true)
+
 		return fmt.Errorf("awaiting last write: %w", contextplus.New(ctx).Err())
 	}
 }

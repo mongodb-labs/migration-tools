@@ -2,31 +2,22 @@ package oteltools
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
-	"github.com/mongodb-labs/migration-tools/contextplus"
 	"github.com/mongodb-labs/migration-tools/future"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 )
 
-// exportLine is one line of the output: one export, as a JSON object. Its
-// fields are the ones that tools reading mongosync’s metrics log files use,
-// so those tools read this output too.
-type exportLine struct {
-	// Time is when the metrics were gathered, in RFC 3339 format. It is the
-	// same instant as every sample’s timestamp in Message.
-	Time string `json:"time"`
-
-	// Message is one Prometheus text exposition.
-	Message string `json:"message"`
-}
+// EndOfExport is the line that follows each export in the output. It is
+// OpenMetrics’ end-of-exposition marker, which Prometheus text parsers read as
+// a comment.
+const EndOfExport = "# EOF"
 
 // exportWorker is the goroutine that a streamExporter controls. It writes a
 // gatherer’s metrics to the output.
@@ -34,14 +25,17 @@ type exportWorker struct {
 	gatherer prometheus.Gatherer
 	writer   io.Writer
 	logger   *slog.Logger
+
+	// gaveUp is set when stopAndFlush stops waiting for the last export.
+	gaveUp *atomic.Bool
 }
 
-// run writes an export every interval until stopCtx is set. It then writes
-// one last export, unless the stop context has already ended, and sets the
+// run writes an export every interval until stop is closed. It then writes one
+// last export, unless stopAndFlush has given up waiting for it, and sets the
 // result.
 func (ew *exportWorker) run(
 	interval time.Duration,
-	stopCtx *future.Future[context.Context],
+	stop <-chan struct{},
 	setResult future.Setter[error],
 ) {
 	timer := time.NewTimer(interval)
@@ -50,31 +44,40 @@ func (ew *exportWorker) run(
 	for {
 		select {
 		case <-timer.C:
-			if err := ew.exportOnce(); err != nil {
-				ew.logger.Warn("Failed to write periodic metrics export.", "error", err)
-			}
-		case <-stopCtx.Ready():
-			ctx := stopCtx.Get()
+		case <-stop:
+		}
 
-			// If ctx has ended, stopAndFlush has stopped waiting, so nobody
-			// expects the last export anymore.
-			if ctx.Err() != nil {
-				setResult(contextplus.New(ctx).Err())
+		// Stopping takes priority: if the timer fired too, select may have
+		// picked it, and a periodic export must not start after stopAndFlush
+		// has stopped waiting.
+		select {
+		case <-stop:
+			// If a Write stalled, stopAndFlush may have given up waiting and
+			// returned. Write nothing more in that case.
+			if ew.gaveUp.Load() {
+				setResult(nil) // Nobody is waiting for it.
 			} else {
+				// One last write, then we’re done.
 				setResult(ew.exportOnce())
 			}
 
 			return
+		default:
+		}
+
+		if err := ew.exportOnce(); err != nil {
+			ew.logger.Warn("Failed to write periodic metrics export.", "error", err)
 		}
 
 		timer.Reset(interval)
 	}
 }
 
-// exportOnce gathers the current metrics and writes them as one export, on
-// one line. It writes nothing if there are no metrics.
+// exportOnce gathers the current metrics and writes them as one export: a
+// Prometheus text exposition followed by an EndOfExport line. It writes
+// nothing if there are no metrics.
 //
-// The line is written in a single Write call, so a rotating writer never
+// The export is written in a single Write call, so a rotating writer never
 // splits it across files.
 func (ew *exportWorker) exportOnce() error {
 	families, err := ew.gatherer.Gather()
@@ -118,33 +121,16 @@ func (ew *exportWorker) exportOnce() error {
 		return nil
 	}
 
-	// As of this writing json.Encoder always writes a single line per Encode
-	// call. That’s undocumented behavior, though. To avoid reliance on that we
-	// use our own buffer.
-	var line bytes.Buffer
+	buf.WriteString(EndOfExport + "\n")
 
-	lineEncoder := json.NewEncoder(&line)
-
-	// Keep the exposition readable: there is no HTML here to protect.
-	lineEncoder.SetEscapeHTML(false)
-
-	// Encode also ends the line with a newline.
-	err = lineEncoder.Encode(exportLine{
-		Time:    time.UnixMilli(nowMS).UTC().Format(time.RFC3339Nano),
-		Message: buf.String(),
-	})
-	if err != nil {
-		return fmt.Errorf("encoding metrics export as JSON: %w", err)
-	}
-
-	wrote, err := ew.writer.Write(line.Bytes())
+	wrote, err := ew.writer.Write(buf.Bytes())
 
 	if err != nil {
 		return fmt.Errorf("writing metrics export: %w", err)
 	}
 
-	if wrote != line.Len() {
-		return fmt.Errorf("incomplete write: only %d of %d bytes", wrote, line.Len())
+	if wrote != buf.Len() {
+		return fmt.Errorf("incomplete write: only %d of %d bytes", wrote, buf.Len())
 	}
 
 	return nil
