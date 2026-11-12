@@ -1,6 +1,7 @@
 package oteltools
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/mongodb-labs/migration-tools/option"
 	"github.com/mongodb-labs/migration-tools/synctools"
+	"github.com/prometheus/client_golang/prometheus"
+	prometheusclient "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
@@ -347,4 +350,38 @@ func TestMetricsOut_WriteErrorsAreLogged(t *testing.T) {
 	)
 
 	assert.ErrorIs(t, pipeline.Shutdown(t.Context()), errWrite, "the final write fails too")
+}
+
+// If stopAndFlush gives up while the last export is still gathering, that
+// export writes nothing, even once gathering finishes.
+func TestStreamExporter_NoWriteAfterGivingUpDuringGather(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(prometheus.NewCounter(prometheus.CounterOpts{Name: "gather_check_total"}))
+
+	gathering := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+
+	gatherer := prometheus.GathererFunc(func() ([]*prometheusclient.MetricFamily, error) {
+		once.Do(func() { close(gathering) })
+		<-release
+
+		return registry.Gather()
+	})
+
+	out := &recordingWriter{}
+	stream := startStreamExporter(gatherer, out, slog.New(slog.DiscardHandler), time.Hour)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	stopErr := make(chan error, 1)
+	go func() { stopErr <- stream.stopAndFlush(ctx) }()
+
+	<-gathering
+	cancel()
+	require.ErrorIs(t, <-stopErr, context.Canceled)
+
+	close(release)
+	<-stream.result.Ready()
+
+	assert.Empty(t, out.writeCalls(), "no write after stopAndFlush gives up")
 }

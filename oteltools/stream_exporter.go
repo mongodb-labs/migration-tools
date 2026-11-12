@@ -25,7 +25,7 @@ type streamExporter struct {
 	result *future.Future[error]
 
 	// gaveUp tells the goroutine that stopAndFlush has stopped waiting for
-	// it, so it must not start the last export.
+	// it, so it must write nothing more.
 	gaveUp *atomic.Bool
 }
 
@@ -60,8 +60,8 @@ func startStreamExporter(
 //
 // A Write can’t be canceled, so if ctx ends before the writes finish,
 // stopAndFlush returns without waiting for them. A Write may then still be in
-// progress, and the goroutine skips the last export unless it has already
-// begun.
+// progress, or about to begin, but an export that hasn’t reached its Write
+// writes nothing.
 func (se *streamExporter) stopAndFlush(ctx context.Context) error {
 	close(se.stop)
 
@@ -70,7 +70,7 @@ func (se *streamExporter) stopAndFlush(ctx context.Context) error {
 	case <-ctx.Done():
 	}
 
-	// If the final write and context are both done, favor write.
+	// If the final write and context are both done, favor the write.
 	select {
 	case <-se.result.Ready():
 		return se.result.Get()

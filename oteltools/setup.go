@@ -134,9 +134,11 @@ type Settings struct {
 	//
 	// The pipeline never closes the writer. If Pipeline.Shutdown succeeds,
 	// the pipeline writes nothing more, so the caller can close the writer
-	// then. If Shutdown fails because its context ended, a Write may still be
-	// in progress, although no new one starts. Closing the writer may unblock
-	// that Write, if the writer supports that (as os.File pipes do).
+	// then. If Shutdown fails because its context ended, one Write may still
+	// be in progress, or may begin just after Shutdown returns if the export
+	// was about to write; no other export writes anything. Closing the writer
+	// may unblock that Write, if the writer supports that (as os.File pipes
+	// do).
 	MetricsOut option.Option[io.Writer]
 
 	// ExportInterval is how often metrics are written to MetricsOut.
@@ -176,9 +178,9 @@ func (p *Pipeline) Handler() http.Handler {
 //
 // If ctx ends before the writes to MetricsOut finish, Shutdown stops waiting
 // for them and returns an error that wraps the context’s error. The last
-// export is then skipped if it hasn’t started; if it has, it may finish after
-// Shutdown returns. See Settings.MetricsOut for what that means for the
-// writer.
+// export then writes nothing unless it has already reached its Write, which
+// may finish after Shutdown returns. See Settings.MetricsOut for what that
+// means for the writer.
 func (p *Pipeline) Shutdown(ctx context.Context) error {
 	p.shutdownOnce.Do(func() {
 		var errs []error

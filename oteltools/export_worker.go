@@ -10,6 +10,7 @@ import (
 
 	"github.com/mongodb-labs/migration-tools/future"
 	"github.com/prometheus/client_golang/prometheus"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 )
@@ -52,14 +53,9 @@ func (ew *exportWorker) run(
 		// has stopped waiting.
 		select {
 		case <-stop:
-			// If a Write stalled, stopAndFlush may have given up waiting and
-			// returned. Write nothing more in that case.
-			if ew.gaveUp.Load() {
-				setResult(nil) // Nobody is waiting for it.
-			} else {
-				// One last write, then we’re done.
-				setResult(ew.exportOnce())
-			}
+			// One last export, then we’re done. (exportOnce writes nothing
+			// if stopAndFlush has given up.)
+			setResult(ew.exportOnce())
 
 			return
 		default:
@@ -75,7 +71,7 @@ func (ew *exportWorker) run(
 
 // exportOnce gathers the current metrics and writes them as one export: a
 // Prometheus text exposition followed by an EndOfExport line. It writes
-// nothing if there are no metrics.
+// nothing if there are no metrics, or if stopAndFlush has given up waiting.
 //
 // The export is written in a single Write call, so a rotating writer never
 // splits it across files.
@@ -87,6 +83,35 @@ func (ew *exportWorker) exportOnce() error {
 		ew.logger.Warn("Failed to gather some metrics for periodic export.", "error", err)
 	}
 
+	export := ew.encodeExport(families)
+	if len(export) == 0 {
+		return nil
+	}
+
+	// Gathering and encoding take time, during which stopAndFlush may have
+	// given up and returned, so check right before writing. (Shutdown can
+	// still give up between this check and the Write; nothing short of
+	// blocking Shutdown on the Write can prevent that.)
+	if ew.gaveUp.Load() {
+		return nil
+	}
+
+	wrote, err := ew.writer.Write(export)
+
+	if err != nil {
+		return fmt.Errorf("writing metrics export: %w", err)
+	}
+
+	if wrote != len(export) {
+		return fmt.Errorf("incomplete write: only %d of %d bytes", wrote, len(export))
+	}
+
+	return nil
+}
+
+// encodeExport returns the gathered metrics as one Prometheus exposition
+// with an EndOfExport line. It returns nothing if there are no metrics.
+func (ew *exportWorker) encodeExport(families []*io_prometheus_client.MetricFamily) []byte {
 	if len(families) == 0 {
 		return nil
 	}
@@ -123,15 +148,5 @@ func (ew *exportWorker) exportOnce() error {
 
 	buf.WriteString(EndOfExport + "\n")
 
-	wrote, err := ew.writer.Write(buf.Bytes())
-
-	if err != nil {
-		return fmt.Errorf("writing metrics export: %w", err)
-	}
-
-	if wrote != buf.Len() {
-		return fmt.Errorf("incomplete write: only %d of %d bytes", wrote, buf.Len())
-	}
-
-	return nil
+	return buf.Bytes()
 }
