@@ -23,9 +23,10 @@
 //
 //		http.Handle("/metrics", pipeline.Handler())
 //
-//
 //		meter := pipeline.MeterProvider().Meter("my-tool")
 //
+//		// This should never actually fail, so a runtime assertion would also
+//		// be appropriate here.
 //		comparedDocs, err := meter.Int64Counter("compared_docs")
 //		if err != nil {
 //			return fmt.Errorf("setup compared_docs: %w", err)
