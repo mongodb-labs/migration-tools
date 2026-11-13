@@ -79,6 +79,21 @@ linters:
       alias:
         - pkg: github.com/deckarep/golang-set/v3
           alias: mapset
+        # These OTel and Prometheus aliases match mongosync’s.
+        - pkg: github.com/prometheus/client_model/go
+          alias: prometheusclient
+        - pkg: go.opentelemetry.io/otel/semconv/v1.40.0
+          alias: semconv
+        # The OTel API and SDK packages are both named `metric`, so code that needs both
+        # (e.g. instrumenting a library and asserting on what it recorded) must alias them.
+        - pkg: go.opentelemetry.io/otel/metric
+          alias: otelmetric
+        - pkg: go.opentelemetry.io/otel/sdk/metric
+          alias: sdkmetric
+        # The OTel Prometheus exporter and the Prometheus client library are both named
+        # `prometheus`.
+        - pkg: go.opentelemetry.io/otel/exporters/prometheus
+          alias: otelprometheus
       no-extra-aliases: true
 
     misspell:
