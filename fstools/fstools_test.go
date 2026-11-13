@@ -69,6 +69,8 @@ func TestDescribeFileType_RealFiles(t *testing.T) {
 
 	// Unix socket paths have a short length limit (104 bytes on macOS),
 	// which t.TempDir() paths can exceed, so put the socket under /tmp.
+	//
+	//nolint:usetesting // t.TempDir() doesn’t guarantee a path under /tmp.
 	sockDir, err := os.MkdirTemp("/tmp", "fstools-test-")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
