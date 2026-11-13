@@ -1,9 +1,13 @@
+//go:build unix
+
 package fstools
 
 import (
 	"io/fs"
+	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -56,8 +60,23 @@ func TestDescribeFileType_RealFiles(t *testing.T) {
 	filePath := filepath.Join(dir, "file")
 	require.NoError(t, os.WriteFile(filePath, []byte("hello"), 0o644))
 
+	// The relative target resolves against the link’s own directory.
 	linkPath := filepath.Join(dir, "link")
-	require.NoError(t, os.Symlink(filePath, linkPath))
+	require.NoError(t, os.Symlink("file", linkPath))
+
+	fifoPath := filepath.Join(dir, "fifo")
+	require.NoError(t, syscall.Mkfifo(fifoPath, 0o644))
+
+	// Unix socket paths have a short length limit (104 bytes on macOS),
+	// which t.TempDir() paths can exceed, so put the socket under /tmp.
+	sockDir, err := os.MkdirTemp("/tmp", "fstools-test-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
+
+	sockPath := filepath.Join(sockDir, "sock")
+	listener, err := net.Listen("unix", sockPath)
+	require.NoError(t, err)
+	defer listener.Close()
 
 	tests := []struct {
 		path string
@@ -66,6 +85,18 @@ func TestDescribeFileType_RealFiles(t *testing.T) {
 		{dir, "directory"},
 		{filePath, "regular file"},
 		{linkPath, "symbolic link"},
+		{fifoPath, "named pipe"},
+		{sockPath, "socket"},
+		{"/dev/null", "character device"},
+	}
+
+	if blockDevice := findBlockDevice(t); blockDevice != "" {
+		tests = append(tests, struct {
+			path string
+			want string
+		}{blockDevice, "device"})
+	} else {
+		t.Log("No block device found under /dev; skipping that case.")
 	}
 
 	for _, tt := range tests {
@@ -74,4 +105,22 @@ func TestDescribeFileType_RealFiles(t *testing.T) {
 
 		assert.Equal(t, tt.want, DescribeFileType(info.Mode()), "path %#q", tt.path)
 	}
+}
+
+// findBlockDevice returns the path of some block device under /dev, or
+// empty string if there is none (e.g., in some containers).
+func findBlockDevice(t *testing.T) string {
+	t.Helper()
+
+	entries, err := os.ReadDir("/dev")
+	require.NoError(t, err, "read /dev")
+
+	for _, entry := range entries {
+		mode := entry.Type()
+		if mode&fs.ModeDevice != 0 && mode&fs.ModeCharDevice == 0 {
+			return filepath.Join("/dev", entry.Name())
+		}
+	}
+
+	return ""
 }
