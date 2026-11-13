@@ -132,8 +132,9 @@ type Settings struct {
 	// format that the package documentation describes. Each export, with
 	// its EndOfExport line, is written in a single Write call.
 	//
-	// If a Write fails, the pipeline writes nothing more, and
-	// Pipeline.Shutdown returns that Write’s error.
+	// If a Write fails, the pipeline logs the error and keeps writing an
+	// export every ExportInterval. Pipeline.Shutdown returns only the last
+	// export’s error.
 	//
 	// The pipeline never closes the writer. If Pipeline.Shutdown succeeds,
 	// the pipeline writes nothing more, so the caller can close the writer

@@ -342,14 +342,20 @@ func TestMetricsOut_WriteErrorsAreLogged(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// Every failed export is logged, not just the first.
 	require.Eventually(
 		t,
-		func() bool { return strings.Contains(string(logs.Bytes()), errWrite.Error()) },
+		func() bool { return strings.Count(string(logs.Bytes()), errWrite.Error()) >= 2 },
 		5*time.Second,
 		10*time.Millisecond,
 	)
 
-	assert.ErrorIs(t, pipeline.Shutdown(t.Context()), errWrite, "Shutdown reports the failed write")
+	assert.ErrorIs(
+		t,
+		pipeline.Shutdown(t.Context()),
+		errWrite,
+		"Shutdown reports the last export’s error",
+	)
 }
 
 // partialOnceWriter writes half of its first Write and fails, then accepts
@@ -391,10 +397,9 @@ func (w *partialOnceWriter) state() (string, int) {
 	return string(w.written), w.calls
 }
 
-// After a Write fails, nothing more is written, and Shutdown reports the
-// failure. This matters most when the Write wrote part of an export, which
-// leaves the output partway through a line.
-func TestMetricsOut_FailedWriteStopsOutput(t *testing.T) {
+// After a Write fails, later exports are still written. Shutdown reports only
+// the last export’s error, so it succeeds once a later Write does.
+func TestMetricsOut_WritesContinueAfterFailedWrite(t *testing.T) {
 	out := &partialOnceWriter{failed: make(chan struct{})}
 
 	pipeline, err := Setup(Settings{
@@ -405,11 +410,24 @@ func TestMetricsOut_FailedWriteStopsOutput(t *testing.T) {
 
 	<-out.failed
 
-	assert.ErrorIs(t, pipeline.Shutdown(t.Context()), errWrite)
+	require.Eventually(
+		t,
+		func() bool {
+			_, calls := out.state()
+			return calls >= 2
+		},
+		5*time.Second,
+		time.Millisecond,
+	)
 
-	written, calls := out.state()
-	assert.Equal(t, 1, calls, "no Write after the partial one")
-	assert.NotContains(t, written, EndOfExport, "the output is only the partial export")
+	require.NoError(t, pipeline.Shutdown(t.Context()), "the last export succeeded")
+
+	written, _ := out.state()
+	assert.True(
+		t,
+		strings.HasSuffix(written, "\n"+EndOfExport+"\n"),
+		"the output ends with a complete export",
+	)
 }
 
 // If stopAndFlush gives up while the last export is still gathering, that
