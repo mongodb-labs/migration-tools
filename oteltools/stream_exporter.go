@@ -17,6 +17,13 @@ import (
 // gatherer’s metrics to Settings.MetricsOut. Because the goroutine reads the
 // same registry that the HTTP handler serves, the output always matches the
 // handler’s.
+//
+// This provides much the same functionality as the OTel SDK’s PeriodicReader.
+// We *avoid* that interface, though, because:
+//   - It wouldn’t include Go runtime & process metrics “for free”.
+//   - Its exporters use raw OTel names without Prometheus’s standard suffixes
+//     (e.g., `_total` for counters), so the file would diverge from the
+//     `/metrics` endpoint.
 type streamExporter struct {
 	// stop tells the goroutine to stop when closed.
 	stop chan struct{}
