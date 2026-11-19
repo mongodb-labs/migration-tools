@@ -55,14 +55,9 @@ labels = ["default", "fast-tidy"]
 type = "both"
 include = "*.go"
 invoke.per-dir-or-once = 7
-# Run go fix from each package directory with "." so that go fix uses the directory's own location
-# to anchor module resolution. Absolute paths passed from "root" working-dir fail with "outside main
-# module" in Go 1.26's revamped analysis-framework-based go fix in some environments (e.g. when
-# GOPATH is controlled by GVM rather than mise). Running with "." from inside each directory avoids
-# that sensitivity entirely.
-working-dir = "dir"
-path-args = "dot"
-cmd = ["mise", "exec", "go", "--", "go", "fix", "-tags", "mstests,ruleguard"]
+working-dir = "root"
+path-args = "dir"
+cmd = ["mise", "exec", "go", "--", "go", "fix"]
 lint-flags = "-diff"
 ok-exit-codes = 0
 lint-failure-exit-codes = 1
