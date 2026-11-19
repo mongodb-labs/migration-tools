@@ -30,8 +30,8 @@ func Test_Option_BSON(t *testing.T) {
 		func(t *testing.T) {
 
 			bytes, err := bson.Marshal(MyTypePtrs{
-				IsNoneOmitEmpty: pointerTo(234),
-				IsSome:          pointerTo(false),
+				IsNoneOmitEmpty: new(234),
+				IsSome:          new(false),
 			})
 			require.NoError(t, err)
 
@@ -63,8 +63,8 @@ func Test_Option_BSON(t *testing.T) {
 
 			assert.Equal(t,
 				MyTypePtrs{
-					IsNoneOmitEmpty: pointerTo(234),
-					IsSome:          pointerTo(false),
+					IsNoneOmitEmpty: new(234),
+					IsSome:          new(false),
 				},
 				rt,
 			)
@@ -142,8 +142,8 @@ func Test_Option_JSON(t *testing.T) {
 		func(t *testing.T) {
 
 			bytes, err := json.Marshal(MyTypePtrs{
-				IsNone: pointerTo(234),
-				IsSome: pointerTo(false),
+				IsNone: new(234),
+				IsSome: new(false),
 			})
 			require.NoError(t, err)
 
@@ -175,8 +175,8 @@ func Test_Option_JSON(t *testing.T) {
 
 			assert.Equal(t,
 				MyTypePtrs{
-					IsNone: pointerTo(234),
-					IsSome: pointerTo(false),
+					IsNone: new(234),
+					IsSome: new(false),
 				},
 				rt,
 			)
@@ -330,10 +330,6 @@ func assertIfNonZero[T any](t *testing.T, zeroVal, nonZeroVal T) {
 
 	assert.Equal(t, None[T](), noneOpt)
 	assert.Equal(t, Some(nonZeroVal), someOpt)
-}
-
-func pointerTo[T any](val T) *T {
-	return &val
 }
 
 func Test_Map(t *testing.T) {
