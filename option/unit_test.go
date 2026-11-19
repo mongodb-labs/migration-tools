@@ -222,6 +222,41 @@ func Test_Option_JSON(t *testing.T) {
 	)
 }
 
+func Test_Option_JSON_UnknownFields(t *testing.T) {
+	type inner struct {
+		Known string `json:"known"`
+	}
+	type outer struct {
+		Opt Option[inner] `json:"opt"`
+	}
+
+	t.Run(
+		"unknown field inside an Option-wrapped struct is rejected",
+		func(t *testing.T) {
+			var parsed outer
+
+			err := json.Unmarshal([]byte(`{"opt":{"known":"x","skipped":"y"}}`), &parsed)
+			assert.ErrorContains(
+				t,
+				err,
+				"unknown field",
+				"Option.UnmarshalJSON should reject keys the inner type lacks, since the caller has no other way to ask for that",
+			)
+		},
+	)
+
+	t.Run(
+		"known fields still decode",
+		func(t *testing.T) {
+			var parsed outer
+
+			err := json.Unmarshal([]byte(`{"opt":{"known":"x"}}`), &parsed)
+			require.NoError(t, err)
+			assert.Equal(t, outer{Some(inner{Known: "x"})}, parsed)
+		},
+	)
+}
+
 func Test_Option_YAML(t *testing.T) {
 	type doc struct {
 		V Option[int] `yaml:"v"`
