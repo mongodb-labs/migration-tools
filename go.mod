@@ -6,6 +6,7 @@ require (
 	github.com/ccoveille/go-safecast/v2 v2.0.1
 	github.com/deckarep/golang-set/v3 v3.0.0
 	github.com/dustin/go-humanize v1.0.1
+	github.com/goccy/go-yaml v1.19.2
 	github.com/google/go-cmp v0.7.0
 	github.com/jaypipes/ghw v0.24.0
 	github.com/samber/lo v1.52.0

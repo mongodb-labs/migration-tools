@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/goccy/go-yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -219,6 +220,24 @@ func Test_Option_JSON(t *testing.T) {
 			)
 		},
 	)
+}
+
+func Test_Option_YAML(t *testing.T) {
+	type doc struct {
+		V Option[int] `yaml:"v"`
+	}
+
+	var present doc
+	require.NoError(t, yaml.Unmarshal([]byte("v: 3"), &present))
+	assert.Equal(t, Some(3), present.V)
+
+	var null doc
+	require.NoError(t, yaml.Unmarshal([]byte("v: null"), &null))
+	assert.Equal(t, None[int](), null.V)
+
+	var absent doc
+	require.NoError(t, yaml.Unmarshal([]byte("{}"), &absent))
+	assert.Equal(t, None[int](), absent.V)
 }
 
 func Test_Option_NoNilSome(t *testing.T) {
