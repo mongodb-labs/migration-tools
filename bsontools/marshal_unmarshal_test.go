@@ -64,7 +64,7 @@ func TestMarshalUnmarshal(t *testing.T) {
 			bson.Undefined{},
 			nil,
 			bson.NewDateTimeFromTime(time.Now()),
-			//time.Now(),
+			// time.Now(),
 			bson.Binary{Subtype: 12, Data: []byte{0, 1, 2}},
 			bson.NewObjectID(),
 			bson.Timestamp{234234, 345345},

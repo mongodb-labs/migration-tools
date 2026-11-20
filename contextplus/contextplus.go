@@ -37,7 +37,6 @@ import (
 // same name, but the returned Context’s Err() will include both
 // `context.Canceled` and the Cause.
 func WithCancelCause(ctx context.Context) (*C, context.CancelCauseFunc) {
-	//nolint:forbidigo
 	newCtx, cancel := context.WithCancelCause(ctx)
 	return New(newCtx), cancel
 }
@@ -53,7 +52,6 @@ func WithDeadlineCause(
 	cause error,
 ) (*C, context.CancelFunc) {
 	wrappedCause := fmt.Errorf("deadline (%s) passed: %w", deadline, cause)
-	//nolint:forbidigo
 	newCtx, cancel := context.WithDeadlineCause(ctx, deadline, wrappedCause)
 	return New(newCtx), cancel
 }
@@ -65,7 +63,6 @@ func WithTimeoutCause(
 	cause error,
 ) (*C, context.CancelFunc) {
 	wrappedCause := fmt.Errorf("timed out after %s: %w", timeout, cause)
-	//nolint:forbidigo
 	newCtx, cancel := context.WithTimeoutCause(ctx, timeout, wrappedCause)
 	return New(newCtx), cancel
 }
@@ -73,7 +70,6 @@ func WithTimeoutCause(
 // ErrGroup is like the standard library’s `errgroup.WithContext()`, but
 // it returns a context from this package.
 func ErrGroup(ctx context.Context) (*errgroup.Group, *C) {
-	//nolint:forbidigo
 	group, ctx2 := errgroup.WithContext(ctx)
 
 	return group, New(ctx2)

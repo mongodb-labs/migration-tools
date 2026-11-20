@@ -164,19 +164,17 @@ func TestVerifierCompareIndexSpecs(t *testing.T) {
 
 		if curCase.expectedDiff.IsNone() {
 			assert.Zero(t, diffOpt, "specs should match")
-		} else {
-			if assert.NotZero(t, diffOpt, "specs should mismatch") {
-				assert.Empty(
-					t,
-					cmp.Diff(
-						curCase.expectedDiff.MustGet(),
-						diffOpt.MustGet(),
-						cmpopts.IgnoreUnexported(jsondiff.Operation{}),
-						cmpopts.IgnoreUnexported(SpecDiff{}),
-					),
-					"should have expected mismatch",
-				)
-			}
+		} else if assert.NotZero(t, diffOpt, "specs should mismatch") {
+			assert.Empty(
+				t,
+				cmp.Diff(
+					curCase.expectedDiff.MustGet(),
+					diffOpt.MustGet(),
+					cmpopts.IgnoreUnexported(jsondiff.Operation{}),
+					cmpopts.IgnoreUnexported(SpecDiff{}),
+				),
+				"should have expected mismatch",
+			)
 		}
 	}
 }

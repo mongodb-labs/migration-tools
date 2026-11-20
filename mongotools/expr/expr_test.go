@@ -185,6 +185,15 @@ func TestGetField(t *testing.T) {
 	})
 }
 
+func TestUnsetField(t *testing.T) {
+	assertExpr(t, UnsetField{Field: "myField", Input: "$$ROOT"}, bson.D{
+		{"$unsetField", bson.D{
+			{"field", "myField"},
+			{"input", "$$ROOT"},
+		}},
+	})
+}
+
 func TestLet(t *testing.T) {
 	assertExpr(t, Let{Vars: bson.D{{"x", 1}}, In: "$$x"}, bson.D{
 		{"$let", bson.D{

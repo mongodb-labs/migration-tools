@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/goccy/go-yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -29,8 +30,8 @@ func Test_Option_BSON(t *testing.T) {
 		func(t *testing.T) {
 
 			bytes, err := bson.Marshal(MyTypePtrs{
-				IsNoneOmitEmpty: pointerTo(234),
-				IsSome:          pointerTo(false),
+				IsNoneOmitEmpty: new(234),
+				IsSome:          new(false),
 			})
 			require.NoError(t, err)
 
@@ -62,8 +63,8 @@ func Test_Option_BSON(t *testing.T) {
 
 			assert.Equal(t,
 				MyTypePtrs{
-					IsNoneOmitEmpty: pointerTo(234),
-					IsSome:          pointerTo(false),
+					IsNoneOmitEmpty: new(234),
+					IsSome:          new(false),
 				},
 				rt,
 			)
@@ -141,8 +142,8 @@ func Test_Option_JSON(t *testing.T) {
 		func(t *testing.T) {
 
 			bytes, err := json.Marshal(MyTypePtrs{
-				IsNone: pointerTo(234),
-				IsSome: pointerTo(false),
+				IsNone: new(234),
+				IsSome: new(false),
 			})
 			require.NoError(t, err)
 
@@ -174,8 +175,8 @@ func Test_Option_JSON(t *testing.T) {
 
 			assert.Equal(t,
 				MyTypePtrs{
-					IsNone: pointerTo(234),
-					IsSome: pointerTo(false),
+					IsNone: new(234),
+					IsSome: new(false),
 				},
 				rt,
 			)
@@ -219,6 +220,59 @@ func Test_Option_JSON(t *testing.T) {
 			)
 		},
 	)
+}
+
+func Test_Option_JSON_UnknownFields(t *testing.T) {
+	type inner struct {
+		Known string `json:"known"`
+	}
+	type outer struct {
+		Opt Option[inner] `json:"opt"`
+	}
+
+	t.Run(
+		"unknown field inside an Option-wrapped struct is rejected",
+		func(t *testing.T) {
+			var parsed outer
+
+			err := json.Unmarshal([]byte(`{"opt":{"known":"x","skipped":"y"}}`), &parsed)
+			assert.ErrorContains(
+				t,
+				err,
+				"unknown field",
+				"Option.UnmarshalJSON should reject keys the inner type lacks, since the caller has no other way to ask for that",
+			)
+		},
+	)
+
+	t.Run(
+		"known fields still decode",
+		func(t *testing.T) {
+			var parsed outer
+
+			err := json.Unmarshal([]byte(`{"opt":{"known":"x"}}`), &parsed)
+			require.NoError(t, err)
+			assert.Equal(t, outer{Some(inner{Known: "x"})}, parsed)
+		},
+	)
+}
+
+func Test_Option_YAML(t *testing.T) {
+	type doc struct {
+		V Option[int] `yaml:"v"`
+	}
+
+	var present doc
+	require.NoError(t, yaml.Unmarshal([]byte("v: 3"), &present))
+	assert.Equal(t, Some(3), present.V)
+
+	var null doc
+	require.NoError(t, yaml.Unmarshal([]byte("v: null"), &null))
+	assert.Equal(t, None[int](), null.V)
+
+	var absent doc
+	require.NoError(t, yaml.Unmarshal([]byte("{}"), &absent))
+	assert.Equal(t, None[int](), absent.V)
 }
 
 func Test_Option_NoNilSome(t *testing.T) {
@@ -311,10 +365,6 @@ func assertIfNonZero[T any](t *testing.T, zeroVal, nonZeroVal T) {
 
 	assert.Equal(t, None[T](), noneOpt)
 	assert.Equal(t, Some(nonZeroVal), someOpt)
-}
-
-func pointerTo[T any](val T) *T {
-	return &val
 }
 
 func Test_Map(t *testing.T) {

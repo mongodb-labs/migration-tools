@@ -74,7 +74,7 @@ func (c *C) Err() error {
 // NB: This is copied from mongosync.
 func wrapCtxErrWithCause(ctx context.Context) error {
 	cause := context.Cause(ctx)
-	err := ctx.Err() //nolint:gocritic
+	err := ctx.Err()
 
 	if cause == nil {
 		return err
@@ -92,7 +92,7 @@ func wrapCtxErrWithCause(ctx context.Context) error {
 	}
 
 	// This can happen if the given ctx is a contextplus, or some other
-	// context.Context immplementation that includes the cause in the
+	// context.Context implementation that includes the cause in the
 	// context’s Err().
 	if errors.Is(err, cause) {
 		return err

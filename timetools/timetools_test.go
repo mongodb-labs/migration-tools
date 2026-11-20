@@ -215,8 +215,7 @@ func TestToDurationOverflow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var err error
-			switch count := tt.count.(type) {
-			case int32:
+			if count, isInt32 := tt.count.(int32); isInt32 {
 				_, err = ToDuration(count, tt.unit)
 			}
 
