@@ -369,14 +369,14 @@ func assertIfNonZero[T any](t *testing.T, zeroVal, nonZeroVal T) {
 
 func Test_Map(t *testing.T) {
 	t.Run("Some applies function", func(t *testing.T) {
-		result := Map(Some(3), func(n int) string {
+		result := Some(3).Map(func(n int) string {
 			return fmt.Sprintf("%d", n)
 		})
 		assert.Equal(t, Some("3"), result)
 	})
 
 	t.Run("None returns None", func(t *testing.T) {
-		result := Map(None[int](), func(n int) string {
+		result := None[int]().Map(func(n int) string {
 			return fmt.Sprintf("%d", n)
 		})
 		assert.Equal(t, None[string](), result)
